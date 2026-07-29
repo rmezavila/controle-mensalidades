@@ -133,7 +133,7 @@ menu = st.sidebar.selectbox(
 )
 
 # ------------------------------
-# 1. CADASTRAR ALUNO (TEXTO VOLTOU AO ORIGINAL)
+# 1. CADASTRAR ALUNO
 # ------------------------------
 if menu == "Cadastrar Aluno":
     st.subheader("➕ Cadastrar Novo Aluno")
@@ -149,7 +149,6 @@ if menu == "Cadastrar Aluno":
             qtd_parcelas = st.number_input("Quantidade de Parcelas", min_value=1, max_value=12, value=12)
             mes_inicial = st.selectbox("Mês Inicial", options=range(1,13), format_func=lambda x: NOMES_MESES[x-1])
             turno = st.selectbox("Turno", ["Manhã", "Tarde", "Noite", "Integral"])
-            # ✅ VOLTOU PARA "Dia de Vencimento"
             dia_vencimento = st.number_input("Dia de Vencimento", min_value=1, max_value=31, value=5)
         
         if st.form_submit_button("💾 Salvar Aluno"):
@@ -190,7 +189,7 @@ if menu == "Cadastrar Aluno":
                 st.rerun()
 
 # ------------------------------
-# 2. CONSULTAR ALUNO (VALORES FORMATADOS)
+# 2. CONSULTAR ALUNO
 # ------------------------------
 elif menu == "Consultar Aluno":
     st.subheader("🔍 Consultar Dados do Aluno")
@@ -210,7 +209,6 @@ elif menu == "Consultar Aluno":
             """, conn, params=(id_aluno,))
             conn.close()
 
-            # ✅ FORMATAR VALORES E DATAS
             if not mensalidades.empty:
                 mensalidades["valor"] = mensalidades["valor"].apply(formatar_valor_df)
                 mensalidades["Data de Vencimento"] = mensalidades["Data de Vencimento"].apply(formatar_data_fixa)
@@ -229,7 +227,7 @@ elif menu == "Consultar Aluno":
         st.info("Nenhum aluno cadastrado.")
 
 # ------------------------------
-# 3. LANÇAR PAGAMENTO (VALORES FORMATADOS)
+# 3. LANÇAR PAGAMENTO (CORRIGIDO A DATA!)
 # ------------------------------
 elif menu == "Lançar Pagamento":
     st.subheader("💳 Lançar Pagamento e Atualizar Status")
@@ -249,7 +247,6 @@ elif menu == "Lançar Pagamento":
             conn.close()
 
             if not mensal.empty:
-                # ✅ FORMATAR VALORES E DATAS
                 mensal["valor"] = mensal["valor"].apply(formatar_valor_df)
                 mensal["Data de Vencimento"] = mensal["Data de Vencimento"].apply(formatar_data_fixa)
                 mensal["Data de Pagamento"] = mensal["Data de Pagamento"].apply(formatar_data_fixa)
@@ -260,13 +257,19 @@ elif menu == "Lançar Pagamento":
                 with st.form("form_pagamento", clear_on_submit=True):
                     id_mensal = st.selectbox("Mensalidade", options=mensal['id_mensalidade'], format_func=lambda x: f"{mensal[mensal['id_mensalidade']==x]['mes_ano'].values[0]} - R$ {mensal[mensal['id_mensalidade']==x]['valor'].values[0]}")
                     novo_status = st.selectbox("Status", ["A Receber", "Quitada", "Atrasada"])
-                    data_pag = st.text_input("Data Pagamento (dd/mm/aaaa)", value=datetime.now().strftime("%d/%m/%Y") if novo_status=="Quitada" else "")
+                    # ✅ AGORA USA A DATA QUE VOCÊ DIGITAR, SE DEIXAR VAZIA USA A DE HOJE
+                    data_pag = st.text_input(
+                        "Data Pagamento (dd/mm/aaaa)", 
+                        value=datetime.now().strftime("%d/%m/%Y") if novo_status == "Quitada" else ""
+                    )
                     if st.form_submit_button("✅ Salvar Alteração"):
+                        # Se digitar, usa a sua; se não, usa a de hoje
+                        data_final = data_pag.strip() if data_pag.strip() else (datetime.now().strftime("%d/%m/%Y") if novo_status == "Quitada" else None)
                         conn = conectar()
                         cur = conn.cursor()
                         cur.execute('''
                         UPDATE mensalidades SET status = ?, data_pagamento = ? WHERE id_mensalidade = ?
-                        ''', (novo_status, data_pag if data_pag else None, id_mensal))
+                        ''', (novo_status, data_final, id_mensal))
                         conn.commit()
                         conn.close()
                         fazer_backup()
@@ -289,7 +292,7 @@ elif menu == "Lista de Alunos":
         st.info("Sem alunos cadastrados.")
 
 # ------------------------------
-# 5. RELATÓRIOS (COM SOMATÓRIO TOTAL)
+# 5. RELATÓRIOS
 # ------------------------------
 elif menu == "Relatórios":
     st.subheader("📊 Relatórios")
@@ -332,7 +335,6 @@ elif menu == "Relatórios":
         conn.close()
 
         if not rel.empty:
-            # ✅ FORMATAR VALORES, DATAS E CALCULAR TOTAL
             total_geral = rel["valor"].sum()
             rel["valor"] = rel["valor"].apply(formatar_valor_df)
             rel["Data de Vencimento"] = rel["Data de Vencimento"].apply(formatar_data_fixa)
@@ -342,7 +344,6 @@ elif menu == "Relatórios":
                 rel.style.map(cor_status, subset=["status"]),
                 use_container_width=True
             )
-            # ✅ MOSTRAR SOMATÓRIO TOTAL
             st.subheader(f"💰 Valor Total do Período: {formatar_valor(total_geral)}")
 
             csv = rel.to_csv(index=False, sep=';', encoding='utf-8')
@@ -374,5 +375,3 @@ elif menu == "Excluir Aluno":
             fazer_backup()
             st.success("Aluno excluído com sucesso!")
             st.rerun()
-    else:
-        st.info("Nenhum aluno cadastrado.")
