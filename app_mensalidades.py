@@ -227,7 +227,7 @@ elif menu == "Consultar Aluno":
         st.info("Nenhum aluno cadastrado.")
 
 # ------------------------------
-# 3. LANÇAR PAGAMENTO (CORRIGIDO A DATA!)
+# 3. LANÇAR PAGAMENTO (CORREÇÃO FINAL DA DATA!)
 # ------------------------------
 elif menu == "Lançar Pagamento":
     st.subheader("💳 Lançar Pagamento e Atualizar Status")
@@ -254,17 +254,36 @@ elif menu == "Lançar Pagamento":
                     mensal.style.map(cor_status, subset=["status"]),
                     use_container_width=True
                 )
-                with st.form("form_pagamento", clear_on_submit=True):
-                    id_mensal = st.selectbox("Mensalidade", options=mensal['id_mensalidade'], format_func=lambda x: f"{mensal[mensal['id_mensalidade']==x]['mes_ano'].values[0]} - R$ {mensal[mensal['id_mensalidade']==x]['valor'].values[0]}")
-                    novo_status = st.selectbox("Status", ["A Receber", "Quitada", "Atrasada"])
-                    # ✅ AGORA USA A DATA QUE VOCÊ DIGITAR, SE DEIXAR VAZIA USA A DE HOJE
-                    data_pag = st.text_input(
-                        "Data Pagamento (dd/mm/aaaa)", 
-                        value=datetime.now().strftime("%d/%m/%Y") if novo_status == "Quitada" else ""
+                with st.form("form_pagamento", clear_on_submit=False):
+                    id_mensal = st.selectbox(
+                        "Mensalidade", 
+                        options=mensal['id_mensalidade'], 
+                        format_func=lambda x: f"{mensal[mensal['id_mensalidade']==x]['mes_ano'].values[0]} - R$ {mensal[mensal['id_mensalidade']==x]['valor'].values[0]}"
                     )
+                    novo_status = st.selectbox("Status", ["A Receber", "Quitada", "Atrasada"])
+                    
+                    # ✅ MOSTRA A DATA JÁ SALVA, SE TIVER; SE NÃO, SUGERE HOJE SÓ PARA QUITADA
+                    data_atual = mensal[mensal['id_mensalidade']==id_mensal]['Data de Pagamento'].values[0]
+                    if data_atual in [None, "", "None"]:
+                        data_pag = st.text_input(
+                            "Data Pagamento (dd/mm/aaaa)", 
+                            value=datetime.now().strftime("%d/%m/%Y") if novo_status == "Quitada" else ""
+                        )
+                    else:
+                        data_pag = st.text_input(
+                            "Data Pagamento (dd/mm/aaaa)", 
+                            value=data_atual
+                        )
+
                     if st.form_submit_button("✅ Salvar Alteração"):
-                        # Se digitar, usa a sua; se não, usa a de hoje
-                        data_final = data_pag.strip() if data_pag.strip() else (datetime.now().strftime("%d/%m/%Y") if novo_status == "Quitada" else None)
+                        # ✅ USA EXATAMENTE O QUE VOCÊ DIGITOU; SÓ HOJE SE ESTIVER VAZIO E QUITADA
+                        if data_pag.strip() == "" and novo_status == "Quitada":
+                            data_final = datetime.now().strftime("%d/%m/%Y")
+                        elif data_pag.strip() == "":
+                            data_final = None
+                        else:
+                            data_final = data_pag.strip()
+
                         conn = conectar()
                         cur = conn.cursor()
                         cur.execute('''
@@ -273,7 +292,7 @@ elif menu == "Lançar Pagamento":
                         conn.commit()
                         conn.close()
                         fazer_backup()
-                        st.success("Pagamento lançado com sucesso!")
+                        st.success("Pagamento lançado com sucesso! A data informada foi mantida.")
                         st.rerun()
     else:
         st.info("Nenhum aluno cadastrado.")
