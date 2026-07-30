@@ -262,27 +262,23 @@ elif menu == "Lançar Pagamento":
                     )
                     novo_status = st.selectbox("Status", ["A Receber", "Quitada", "Atrasada"])
                     
-                    # ✅ MOSTRA A DATA JÁ SALVA, SE TIVER; SE NÃO, SUGERE HOJE SÓ PARA QUITADA
+                    # ✅ MOSTRA A DATA JÁ SALVA; SE NÃO TIVER, DEIXA VAZIO PARA VOCÊ PREENCHER
                     data_atual = mensal[mensal['id_mensalidade']==id_mensal]['Data de Pagamento'].values[0]
                     if data_atual in [None, "", "None"]:
-                        data_pag = st.text_input(
-                            "Data Pagamento (dd/mm/aaaa)", 
-                            value=datetime.now().strftime("%d/%m/%Y") if novo_status == "Quitada" else ""
-                        )
+                        data_pag = st.text_input("Data Pagamento (dd/mm/aaaa)", value="")
                     else:
-                        data_pag = st.text_input(
-                            "Data Pagamento (dd/mm/aaaa)", 
-                            value=data_atual
-                        )
+                        data_pag = st.text_input("Data Pagamento (dd/mm/aaaa)", value=data_atual)
 
                     if st.form_submit_button("✅ Salvar Alteração"):
-                        # ✅ USA EXATAMENTE O QUE VOCÊ DIGITOU; SÓ HOJE SE ESTIVER VAZIO E QUITADA
-                        if data_pag.strip() == "" and novo_status == "Quitada":
-                            data_final = datetime.now().strftime("%d/%m/%Y")
-                        elif data_pag.strip() == "":
-                            data_final = None
-                        else:
+                        # ✅ REGRA DE OURO: USA O QUE VOCÊ DIGITOU
+                        if data_pag.strip() != "":
                             data_final = data_pag.strip()
+                        # Se deixou vazio e marcar como Quitada, usa hoje como ajuda
+                        elif novo_status == "Quitada":
+                            data_final = datetime.now().strftime("%d/%m/%Y")
+                        # Se deixou vazio e não é Quitada, não preenche nada
+                        else:
+                            data_final = None
 
                         conn = conectar()
                         cur = conn.cursor()
@@ -296,7 +292,6 @@ elif menu == "Lançar Pagamento":
                         st.rerun()
     else:
         st.info("Nenhum aluno cadastrado.")
-
 # ------------------------------
 # 4. LISTA DE ALUNOS
 # ------------------------------
