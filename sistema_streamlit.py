@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 # ------------------------------
-# ARQUIVOS DE DADOS (CSV NO LUGAR DO BANCO)
+# ARQUIVOS DE DADOS
 # ------------------------------
 ARQ_ALUNOS = "alunos.csv"
 ARQ_MENSAL = "mensalidades.csv"
@@ -40,7 +40,7 @@ NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 LISTA_MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
 # ------------------------------
-# INICIALIZAR SISTEMA
+# INICIALIZAR
 # ------------------------------
 inicializar_arquivos()
 st.set_page_config(page_title="Controle Mensalidades - Web", layout="wide")
@@ -89,7 +89,7 @@ if menu == "Alunos":
                     df_alunos = pd.concat([df_alunos, novo_aluno], ignore_index=True)
                     df_alunos.to_csv(ARQ_ALUNOS, index=False)
 
-                    # GERAR PARCELAS AUTOMATICAMENTE
+                    # GERAR PARCELAS
                     df_mensal = pd.read_csv(ARQ_MENSAL)
                     base = mi_num - 1
                     for i in range(int(parcelas)):
@@ -118,7 +118,7 @@ if menu == "Alunos":
                 st.write(f"💰 Valor: {formatar_valor(a['valor_mensal'])} | Parcelas: {a['qtd_parcelas']}")
                 st.write(f"📆 Início: {NOMES_MESES[int(a['mes_inicial'])-1]} | Turno: {a['turno']}")
                 
-                # CONFIRMAÇÃO ANTES DE EXCLUIR
+                # CONFIRMAÇÃO EXCLUSÃO
                 if f"conf_excl_{a['id_aluno']}" not in st.session_state:
                     st.session_state[f"conf_excl_{a['id_aluno']}"] = False
                 
@@ -138,14 +138,14 @@ if menu == "Alunos":
                         df_mensal = df_mensal[df_mensal["id_aluno"] != a["id_aluno"]]
                         df_alunos.to_csv(ARQ_ALUNOS, index=False)
                         df_mensal.to_csv(ARQ_MENSAL, index=False)
-                        st.success("Aluno e mensalidades excluídos com sucesso!")
+                        st.success("Aluno e mensalidades excluídos!")
                         st.session_state[f"conf_excl_{a['id_aluno']}"] = False
                         st.rerun()
     else:
         st.info("Nenhum aluno cadastrado ainda.")
 
 # ------------------------------
-# TELA DE MENSALIDADES
+# TELA DE MENSALIDADES (SEM BOTÃO DAR BAIXA - SÓ EDITAR)
 # ------------------------------
 elif menu == "Mensalidades":
     st.subheader("Controle de Mensalidades")
@@ -161,30 +161,26 @@ elif menu == "Mensalidades":
 
         st.divider()
         for _, m in mensais.iterrows():
-            status_exib = "Atrasada" if m["status"] == "A Receber" and data_valida(m["vencimento"]) and datetime.strptime(m["vencimento"],"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y") else m["status"]
+            status_exib = "Atrasada" if m["status"] == "A Receber" and data_valida(str(m["vencimento"])) and datetime.strptime(str(m["vencimento"]),"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y") else m["status"]
             cor = "🔴" if status_exib == "Atrasada" else ("🟢" if status_exib == "Quitada" else "🟡")
             with st.container(border=True):
-                col1, col2, col3, col4, col5, col6 = st.columns(6)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 col1.write(f"**{m['mes_ano']}**")
                 col2.write(formatar_valor(m["valor"]))
                 col3.write(f"Venc: {m['vencimento']}")
                 col4.write(f"{cor} {status_exib}")
-                if m["status"] != "Quitada" and col5.button(f"✅ Dar Baixa", key=f"baixar_{m['id_mensalidade']}"):
-                    df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["status", "data_pagamento"]] = ["Quitada", hoje]
-                    df_mensal.to_csv(ARQ_MENSAL, index=False)
-                    st.success("Baixa registrada com sucesso!")
-                    st.rerun()
-                if col6.button(f"Editar", key=f"editar_{m['id_mensalidade']}"):
+                # ✅ SÓ FICA O BOTÃO EDITAR
+                if col5.button(f"Editar", key=f"editar_{m['id_mensalidade']}_{m['mes_ano']}"):
                     st.session_state["editando"] = m
                 if "editando" in st.session_state and st.session_state["editando"]["id_mensalidade"] == m["id_mensalidade"]:
-                    with st.form(f"form_mensal_{m['id_mensalidade']}", clear_on_submit=True):
+                    with st.form(f"form_mensal_{m['id_mensalidade']}_{m['mes_ano']}", clear_on_submit=True):
                         novo_valor = st.text_input("Valor R$", value=str(m["valor"]).replace('.',','))
                         novo_venc = st.text_input("Vencimento", value=m["vencimento"])
                         novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m["status"]=="A Receber" else 1)
-                        dt_pg = st.text_input("Data Pagamento", value=m["data_pagamento"] if m["status"]=="Quitada" else hoje)
+                        dt_pg = st.text_input("Data Pagamento", value=m["data_pagamento"] if m["status"]=="Quitada" else "")
                         if st.form_submit_button("Salvar Alteração"):
                             if not data_valida(novo_venc):
-                                st.error("Data de vencimento inválida! Use dd/mm/aaaa")
+                                st.error("Data inválida! Use dd/mm/aaaa")
                             else:
                                 df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["valor", "vencimento", "status", "data_pagamento"]] = [
                                     float(novo_valor.replace(',','.')), novo_venc, novo_status, dt_pg if novo_status=="Quitada" else None
@@ -240,7 +236,7 @@ elif menu == "Relatórios":
         st.subheader(f"Total: {formatar_valor(total)}")
 
         st.divider()
-        st.info("🖨️ Aperte Ctrl+P ou o ícone de impressora do navegador para imprimir ou salvar em PDF")
+        st.info("🖨️ Aperte Ctrl+P ou o ícone de impressora do navegador")
         if st.button("🖨️ Visualizar para Imprimir"):
             st.markdown(f"<h2 style='text-align:center;'>{titulo_rel}</h2><p style='text-align:center;'>Emitido em: {hoje}</p><hr>", unsafe_allow_html=True)
             st.table(exibe)
