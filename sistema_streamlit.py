@@ -35,6 +35,22 @@ def data_valida(data):
     try: datetime.strptime(data, "%d/%m/%Y"); return True
     except: return False
 
+# ✅ FUNÇÃO PARA CARREGAR DADOS COM TIPO CERTO
+def carregar_alunos():
+    df = pd.read_csv(ARQ_ALUNOS, dtype={
+        "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
+        "ano_letivo": int, "valor_mensal": float, "qtd_parcelas": int,
+        "mes_inicial": int, "turno": str
+    })
+    return df
+
+def carregar_mensalidades():
+    df = pd.read_csv(ARQ_MENSAL, dtype={
+        "id_mensalidade": int, "id_aluno": int, "mes_ano": str, "valor": float,
+        "vencimento": str, "data_pagamento": str, "status": str
+    })
+    return df
+
 NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 LISTA_MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
@@ -56,7 +72,7 @@ menu = st.sidebar.selectbox("Menu", ["Alunos", "Mensalidades", "Relatórios"])
 # ------------------------------
 if menu == "Alunos":
     st.subheader("Cadastro de Alunos")
-    df_alunos = pd.read_csv(ARQ_ALUNOS)
+    df_alunos = carregar_alunos()
 
     with st.form("form_aluno", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -90,7 +106,7 @@ if menu == "Alunos":
                     df_alunos.to_csv(ARQ_ALUNOS, index=False)
 
                     # GERAR PARCELAS
-                    df_mensal = pd.read_csv(ARQ_MENSAL)
+                    df_mensal = carregar_mensalidades()
                     base = mi_num - 1
                     for i in range(int(parcelas)):
                         m = (base + i) % 12
@@ -99,7 +115,7 @@ if menu == "Alunos":
                         nova_parc = pd.DataFrame([{
                             "id_mensalidade": gerar_id(ARQ_MENSAL),
                             "id_aluno": novo_id, "mes_ano": ma, "valor": valor_float,
-                            "vencimento": ve, "data_pagamento": None, "status": "A Receber"
+                            "vencimento": ve, "data_pagamento": "", "status": "A Receber"
                         }])
                         df_mensal = pd.concat([df_mensal, nova_parc], ignore_index=True)
                     df_mensal.to_csv(ARQ_MENSAL, index=False)
@@ -134,7 +150,7 @@ if menu == "Alunos":
                         st.rerun()
                     if col_sim.button("✅ Sim, excluir", key=f"sim_excl_{a['id_aluno']}"):
                         df_alunos = df_alunos[df_alunos["id_aluno"] != a["id_aluno"]]
-                        df_mensal = pd.read_csv(ARQ_MENSAL)
+                        df_mensal = carregar_mensalidades()
                         df_mensal = df_mensal[df_mensal["id_aluno"] != a["id_aluno"]]
                         df_alunos.to_csv(ARQ_ALUNOS, index=False)
                         df_mensal.to_csv(ARQ_MENSAL, index=False)
@@ -145,12 +161,12 @@ if menu == "Alunos":
         st.info("Nenhum aluno cadastrado ainda.")
 
 # ------------------------------
-# TELA DE MENSALIDADES (SEM BOTÃO DAR BAIXA - SÓ EDITAR)
+# TELA DE MENSALIDADES
 # ------------------------------
 elif menu == "Mensalidades":
     st.subheader("Controle de Mensalidades")
-    df_alunos = pd.read_csv(ARQ_ALUNOS)
-    df_mensal = pd.read_csv(ARQ_MENSAL)
+    df_alunos = carregar_alunos()
+    df_mensal = carregar_mensalidades()
     if df_alunos.empty:
         st.warning("Cadastre um aluno primeiro!")
     else:
@@ -169,21 +185,21 @@ elif menu == "Mensalidades":
                 col2.write(formatar_valor(m["valor"]))
                 col3.write(f"Venc: {m['vencimento']}")
                 col4.write(f"{cor} {status_exib}")
-                # ✅ SÓ FICA O BOTÃO EDITAR
                 if col5.button(f"Editar", key=f"editar_{m['id_mensalidade']}_{m['mes_ano']}"):
                     st.session_state["editando"] = m
                 if "editando" in st.session_state and st.session_state["editando"]["id_mensalidade"] == m["id_mensalidade"]:
                     with st.form(f"form_mensal_{m['id_mensalidade']}_{m['mes_ano']}", clear_on_submit=True):
                         novo_valor = st.text_input("Valor R$", value=str(m["valor"]).replace('.',','))
-                        novo_venc = st.text_input("Vencimento", value=m["vencimento"])
+                        novo_venc = st.text_input("Vencimento", value=str(m["vencimento"]))
                         novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m["status"]=="A Receber" else 1)
-                        dt_pg = st.text_input("Data Pagamento", value=m["data_pagamento"] if m["status"]=="Quitada" else "")
+                        dt_pg = st.text_input("Data Pagamento", value=str(m["data_pagamento"]) if m["status"]=="Quitada" else "")
                         if st.form_submit_button("Salvar Alteração"):
                             if not data_valida(novo_venc):
                                 st.error("Data inválida! Use dd/mm/aaaa")
                             else:
+                                # ✅ SALVANDO COM TIPO CERTO
                                 df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["valor", "vencimento", "status", "data_pagamento"]] = [
-                                    float(novo_valor.replace(',','.')), novo_venc, novo_status, dt_pg if novo_status=="Quitada" else None
+                                    float(novo_valor.replace(',','.')), str(novo_venc), str(novo_status), str(dt_pg) if novo_status=="Quitada" else ""
                                 ]
                                 df_mensal.to_csv(ARQ_MENSAL, index=False)
                                 st.success("Atualizado com sucesso!")
@@ -196,8 +212,8 @@ elif menu == "Mensalidades":
 elif menu == "Relatórios":
     st.subheader("Relatórios")
     tipo = st.radio("Escolha", ["Todos", "A Receber", "Atrasadas", "Quitadas", "Por Período"], horizontal=True)
-    df_alunos = pd.read_csv(ARQ_ALUNOS)
-    df_mensal = pd.read_csv(ARQ_MENSAL)
+    df_alunos = carregar_alunos()
+    df_mensal = carregar_mensalidades()
     hoje = datetime.now().strftime("%d/%m/%Y")
     dados = None
     titulo_rel = ""
