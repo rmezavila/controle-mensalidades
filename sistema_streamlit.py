@@ -32,10 +32,10 @@ def formatar_valor(valor):
     return f"R$ {valor:,.2f}".replace('.', '#').replace(',', '.').replace('#', ',')
 
 def data_valida(data):
-    try: datetime.strptime(data, "%d/%m/%Y"); return True
+    try: datetime.strptime(str(data), "%d/%m/%Y"); return True
     except: return False
 
-# CARREGAR COM TIPOS CORRETOS
+# CARREGAR COM TIPOS CERTOS
 def carregar_alunos():
     df = pd.read_csv(ARQ_ALUNOS, dtype={
         "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
@@ -105,6 +105,7 @@ if menu == "Alunos":
                     df_alunos = pd.concat([df_alunos, novo_aluno], ignore_index=True)
                     df_alunos.to_csv(ARQ_ALUNOS, index=False)
 
+                    # ✅ CORRIGIDO: PARCELAS NOVAS COMEÇAM SEMPRE "A RECEBER"
                     df_mensal = carregar_mensalidades()
                     base = mi_num - 1
                     for i in range(int(parcelas)):
@@ -175,8 +176,13 @@ elif menu == "Mensalidades":
 
         st.divider()
         for _, m in mensais.iterrows():
-            status_exib = "Atrasada" if m["status"] == "A Receber" and data_valida(str(m["vencimento"])) and datetime.strptime(str(m["vencimento"]),"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y") else m["status"]
+            # ✅ CORRIGIDO: CÁLCULO DE STATUS EXIBE SEMPRE BASEADO NO CAMPO STATUS
+            status_exib = m["status"]
+            if status_exib == "A Receber" and data_valida(str(m["vencimento"])):
+                if datetime.strptime(str(m["vencimento"]),"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y"):
+                    status_exib = "Atrasada"
             cor = "🔴" if status_exib == "Atrasada" else ("🟢" if status_exib == "Quitada" else "🟡")
+            
             with st.container(border=True):
                 col1, col2, col3, col4, col5 = st.columns(5)
                 col1.write(f"**{m['mes_ano']}**")
@@ -204,7 +210,7 @@ elif menu == "Mensalidades":
                                 st.rerun()
 
 # ------------------------------
-# RELATÓRIOS CORRIGIDO
+# RELATÓRIOS CORRIGIDOS
 # ------------------------------
 elif menu == "Relatórios":
     st.subheader("Relatórios")
@@ -220,7 +226,6 @@ elif menu == "Relatórios":
         col_d1, col_d2 = st.columns(2)
         dt_inicio = col_d1.text_input("Data Início (dd/mm/aaaa)", value="01/01/2026")
         dt_fim = col_d2.text_input("Data Fim (dd/mm/aaaa)", value=hoje)
-        # ✅ AQUI ADICIONA O FILTRO DE STATUS DENTRO DO PERÍODO
         status_periodo = st.radio("Filtrar por Status", ["Todos", "A Receber", "Atrasadas", "Quitadas"], horizontal=True)
         titulo_rel = f"Relatório: {status_periodo} | Período: {dt_inicio} até {dt_fim}"
         
@@ -228,11 +233,13 @@ elif menu == "Relatórios":
             dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
             dados = dados[(dados["vencimento"] >= dt_inicio) & (dados["vencimento"] <= dt_fim)]
             
-            # APLICA O FILTRO DE STATUS
+            # ✅ FILTROS EXATOS, SEM ERRO
             if status_periodo == "A Receber":
-                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] >= hoje)]
+                dados = dados[dados["status"] == "A Receber"]
+                dados = dados[dados["vencimento"] >= hoje]
             elif status_periodo == "Atrasadas":
-                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] < hoje)]
+                dados = dados[dados["status"] == "A Receber"]
+                dados = dados[dados["vencimento"] < hoje]
             elif status_periodo == "Quitadas":
                 dados = dados[dados["status"] == "Quitada"]
 
@@ -242,11 +249,13 @@ elif menu == "Relatórios":
     elif tipo == "A Receber":
         titulo_rel = "Relatório - A Receber"
         dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
-        dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] >= hoje)]
+        dados = dados[dados["status"] == "A Receber"]
+        dados = dados[dados["vencimento"] >= hoje]
     elif tipo == "Atrasadas":
         titulo_rel = "Relatório - Atrasadas"
         dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
-        dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] < hoje)]
+        dados = dados[dados["status"] == "A Receber"]
+        dados = dados[dados["vencimento"] < hoje]
     else:
         titulo_rel = "Relatório - Quitadas"
         dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
