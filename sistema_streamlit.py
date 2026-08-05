@@ -35,7 +35,7 @@ def data_valida(data):
     try: datetime.strptime(data, "%d/%m/%Y"); return True
     except: return False
 
-# ✅ FUNÇÃO PARA CARREGAR DADOS COM TIPO CERTO
+# CARREGAR COM TIPOS CORRETOS
 def carregar_alunos():
     df = pd.read_csv(ARQ_ALUNOS, dtype={
         "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
@@ -105,7 +105,6 @@ if menu == "Alunos":
                     df_alunos = pd.concat([df_alunos, novo_aluno], ignore_index=True)
                     df_alunos.to_csv(ARQ_ALUNOS, index=False)
 
-                    # GERAR PARCELAS
                     df_mensal = carregar_mensalidades()
                     base = mi_num - 1
                     for i in range(int(parcelas)):
@@ -134,7 +133,6 @@ if menu == "Alunos":
                 st.write(f"💰 Valor: {formatar_valor(a['valor_mensal'])} | Parcelas: {a['qtd_parcelas']}")
                 st.write(f"📆 Início: {NOMES_MESES[int(a['mes_inicial'])-1]} | Turno: {a['turno']}")
                 
-                # CONFIRMAÇÃO EXCLUSÃO
                 if f"conf_excl_{a['id_aluno']}" not in st.session_state:
                     st.session_state[f"conf_excl_{a['id_aluno']}"] = False
                 
@@ -197,7 +195,6 @@ elif menu == "Mensalidades":
                             if not data_valida(novo_venc):
                                 st.error("Data inválida! Use dd/mm/aaaa")
                             else:
-                                # ✅ SALVANDO COM TIPO CERTO
                                 df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["valor", "vencimento", "status", "data_pagamento"]] = [
                                     float(novo_valor.replace(',','.')), str(novo_venc), str(novo_status), str(dt_pg) if novo_status=="Quitada" else ""
                                 ]
@@ -207,7 +204,7 @@ elif menu == "Mensalidades":
                                 st.rerun()
 
 # ------------------------------
-# RELATÓRIOS COM IMPRESSÃO
+# RELATÓRIOS CORRIGIDO
 # ------------------------------
 elif menu == "Relatórios":
     st.subheader("Relatórios")
@@ -219,14 +216,26 @@ elif menu == "Relatórios":
     titulo_rel = ""
 
     if tipo == "Por Período":
-        st.subheader("Filtrar por Período de Vencimento")
+        st.subheader("Filtrar por Período + Status")
         col_d1, col_d2 = st.columns(2)
         dt_inicio = col_d1.text_input("Data Início (dd/mm/aaaa)", value="01/01/2026")
         dt_fim = col_d2.text_input("Data Fim (dd/mm/aaaa)", value=hoje)
-        titulo_rel = f"Relatório de {dt_inicio} até {dt_fim}"
+        # ✅ AQUI ADICIONA O FILTRO DE STATUS DENTRO DO PERÍODO
+        status_periodo = st.radio("Filtrar por Status", ["Todos", "A Receber", "Atrasadas", "Quitadas"], horizontal=True)
+        titulo_rel = f"Relatório: {status_periodo} | Período: {dt_inicio} até {dt_fim}"
+        
         if data_valida(dt_inicio) and data_valida(dt_fim):
             dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
             dados = dados[(dados["vencimento"] >= dt_inicio) & (dados["vencimento"] <= dt_fim)]
+            
+            # APLICA O FILTRO DE STATUS
+            if status_periodo == "A Receber":
+                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] >= hoje)]
+            elif status_periodo == "Atrasadas":
+                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] < hoje)]
+            elif status_periodo == "Quitadas":
+                dados = dados[dados["status"] == "Quitada"]
+
     elif tipo == "Todos":
         titulo_rel = "Relatório Geral de Mensalidades"
         dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
