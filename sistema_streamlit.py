@@ -105,7 +105,6 @@ if menu == "Alunos":
                     df_alunos = pd.concat([df_alunos, novo_aluno], ignore_index=True)
                     df_alunos.to_csv(ARQ_ALUNOS, index=False)
 
-                    # ✅ CORRIGIDO: PARCELAS NOVAS COMEÇAM SEMPRE "A RECEBER"
                     df_mensal = carregar_mensalidades()
                     base = mi_num - 1
                     for i in range(int(parcelas)):
@@ -160,7 +159,7 @@ if menu == "Alunos":
         st.info("Nenhum aluno cadastrado ainda.")
 
 # ------------------------------
-# TELA DE MENSALIDADES
+# TELA DE MENSALIDADES - SALVANDO APENAS A LINHA EXATA
 # ------------------------------
 elif menu == "Mensalidades":
     st.subheader("Controle de Mensalidades")
@@ -176,7 +175,6 @@ elif menu == "Mensalidades":
 
         st.divider()
         for _, m in mensais.iterrows():
-            # ✅ CORRIGIDO: CÁLCULO DE STATUS EXIBE SEMPRE BASEADO NO CAMPO STATUS
             status_exib = m["status"]
             if status_exib == "A Receber" and data_valida(str(m["vencimento"])):
                 if datetime.strptime(str(m["vencimento"]),"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y"):
@@ -190,9 +188,9 @@ elif menu == "Mensalidades":
                 col3.write(f"Venc: {m['vencimento']}")
                 col4.write(f"{cor} {status_exib}")
                 if col5.button(f"Editar", key=f"editar_{m['id_mensalidade']}_{m['mes_ano']}"):
-                    st.session_state["editando"] = m
-                if "editando" in st.session_state and st.session_state["editando"]["id_mensalidade"] == m["id_mensalidade"]:
-                    with st.form(f"form_mensal_{m['id_mensalidade']}_{m['mes_ano']}", clear_on_submit=True):
+                    st.session_state["editando_id"] = int(m["id_mensalidade"])
+                if "editando_id" in st.session_state and st.session_state["editando_id"] == int(m["id_mensalidade"]):
+                    with st.form(f"form_mensal_{m['id_mensalidade']}", clear_on_submit=True):
                         novo_valor = st.text_input("Valor R$", value=str(m["valor"]).replace('.',','))
                         novo_venc = st.text_input("Vencimento", value=str(m["vencimento"]))
                         novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m["status"]=="A Receber" else 1)
@@ -201,16 +199,19 @@ elif menu == "Mensalidades":
                             if not data_valida(novo_venc):
                                 st.error("Data inválida! Use dd/mm/aaaa")
                             else:
-                                df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["valor", "vencimento", "status", "data_pagamento"]] = [
-                                    float(novo_valor.replace(',','.')), str(novo_venc), str(novo_status), str(dt_pg) if novo_status=="Quitada" else ""
-                                ]
+                                # ✅ CORREÇÃO PRINCIPAL: USA O ID EXATO PARA ALTERAR SÓ ESSA LINHA
+                                idx = df_mensal.index[df_mensal["id_mensalidade"] == int(m["id_mensalidade"])].tolist()[0]
+                                df_mensal.at[idx, "valor"] = float(novo_valor.replace(',','.'))
+                                df_mensal.at[idx, "vencimento"] = str(novo_venc)
+                                df_mensal.at[idx, "status"] = str(novo_status)
+                                df_mensal.at[idx, "data_pagamento"] = str(dt_pg) if novo_status=="Quitada" else ""
                                 df_mensal.to_csv(ARQ_MENSAL, index=False)
-                                st.success("Atualizado com sucesso!")
-                                del st.session_state["editando"]
+                                st.success("Atualizado com sucesso! Apenas esta parcela foi alterada.")
+                                del st.session_state["editando_id"]
                                 st.rerun()
 
 # ------------------------------
-# RELATÓRIOS CORRIGIDOS
+# RELATÓRIOS
 # ------------------------------
 elif menu == "Relatórios":
     st.subheader("Relatórios")
@@ -233,7 +234,6 @@ elif menu == "Relatórios":
             dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
             dados = dados[(dados["vencimento"] >= dt_inicio) & (dados["vencimento"] <= dt_fim)]
             
-            # ✅ FILTROS EXATOS, SEM ERRO
             if status_periodo == "A Receber":
                 dados = dados[dados["status"] == "A Receber"]
                 dados = dados[dados["vencimento"] >= hoje]
