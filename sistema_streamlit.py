@@ -1,45 +1,29 @@
 import streamlit as st
-import sqlite3
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
+import os
 
 # ------------------------------
-# BANCO EXCLUSIVO DO STREAMLIT
+# ARQUIVOS DE DADOS (CSV NO LUGAR DO BANCO)
 # ------------------------------
-ARQ_DB = 'controle_streamlit.db'
+ARQ_ALUNOS = "alunos.csv"
+ARQ_MENSAL = "mensalidades.csv"
 
-def conectar():
-    return sqlite3.connect(ARQ_DB, timeout=5)
+def inicializar_arquivos():
+    if not os.path.exists(ARQ_ALUNOS):
+        pd.DataFrame(columns=[
+            "id_aluno", "nome", "responsavel", "data_matricula",
+            "ano_letivo", "valor_mensal", "qtd_parcelas", "mes_inicial", "turno"
+        ]).to_csv(ARQ_ALUNOS, index=False)
+    if not os.path.exists(ARQ_MENSAL):
+        pd.DataFrame(columns=[
+            "id_mensalidade", "id_aluno", "mes_ano", "valor",
+            "vencimento", "data_pagamento", "status"
+        ]).to_csv(ARQ_MENSAL, index=False)
 
-def criar_banco():
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS alunos (
-        id_aluno INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        responsavel TEXT NOT NULL,
-        data_matricula TEXT NOT NULL,
-        ano_letivo INTEGER NOT NULL,
-        valor_mensal REAL NOT NULL,
-        qtd_parcelas INTEGER NOT NULL,
-        mes_inicial INTEGER NOT NULL,
-        turno TEXT NOT NULL
-    )''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS mensalidades (
-        id_mensalidade INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_aluno INTEGER NOT NULL,
-        mes_ano TEXT NOT NULL,
-        valor REAL NOT NULL,
-        vencimento TEXT NOT NULL,
-        data_pagamento TEXT,
-        status TEXT DEFAULT 'A Receber',
-        FOREIGN KEY (id_aluno) REFERENCES alunos(id_aluno) ON DELETE CASCADE,
-        UNIQUE(id_aluno, mes_ano)
-    )''')
-    conn.commit()
-    conn.close()
+def gerar_id(tabela):
+    df = pd.read_csv(tabela)
+    return 1 if df.empty else int(df.iloc[:,0].max() + 1)
 
 # ------------------------------
 # FUNÇÕES AUXILIARES
@@ -56,9 +40,9 @@ NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 LISTA_MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
 # ------------------------------
-# INICIALIZAR
+# INICIALIZAR SISTEMA
 # ------------------------------
-criar_banco()
+inicializar_arquivos()
 st.set_page_config(page_title="Controle Mensalidades - Web", layout="wide")
 st.title("📚 Controle de Mensalidades - Versão Web")
 
@@ -72,9 +56,7 @@ menu = st.sidebar.selectbox("Menu", ["Alunos", "Mensalidades", "Relatórios"])
 # ------------------------------
 if menu == "Alunos":
     st.subheader("Cadastro de Alunos")
-    conn = conectar()
-    alunos = conn.execute("SELECT * FROM alunos ORDER BY nome").fetchall()
-    conn.close()
+    df_alunos = pd.read_csv(ARQ_ALUNOS)
 
     with st.form("form_aluno", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -97,20 +79,31 @@ if menu == "Alunos":
                 try:
                     valor_float = float(valor.replace(',', '.'))
                     mi_num = NOMES_MESES.index(mes_inic) + 1
-                    conn = conectar()
-                    cur = conn.cursor()
-                    cur.execute('''INSERT INTO alunos VALUES (NULL,?,?,?,?,?,?,?,?)''',
-                                (nome, resp, dt_mat, int(ano), valor_float, int(parcelas), mi_num, turno))
-                    novo_id = cur.lastrowid
+                    novo_id = gerar_id(ARQ_ALUNOS)
+                    novo_aluno = pd.DataFrame([{
+                        "id_aluno": novo_id, "nome": nome, "responsavel": resp,
+                        "data_matricula": dt_mat, "ano_letivo": int(ano),
+                        "valor_mensal": valor_float, "qtd_parcelas": int(parcelas),
+                        "mes_inicial": mi_num, "turno": turno
+                    }])
+                    df_alunos = pd.concat([df_alunos, novo_aluno], ignore_index=True)
+                    df_alunos.to_csv(ARQ_ALUNOS, index=False)
+
+                    # GERAR PARCELAS AUTOMATICAMENTE
+                    df_mensal = pd.read_csv(ARQ_MENSAL)
                     base = mi_num - 1
                     for i in range(int(parcelas)):
                         m = (base + i) % 12
                         ma = f"{LISTA_MESES[m]}/{ano}"
                         ve = f"10/{LISTA_MESES[m]}/{ano}"
-                        cur.execute('''INSERT INTO mensalidades VALUES (NULL,?,?,?,?,NULL,'A Receber')''',
-                                    (novo_id, ma, valor_float, ve))
-                    conn.commit()
-                    conn.close()
+                        nova_parc = pd.DataFrame([{
+                            "id_mensalidade": gerar_id(ARQ_MENSAL),
+                            "id_aluno": novo_id, "mes_ano": ma, "valor": valor_float,
+                            "vencimento": ve, "data_pagamento": None, "status": "A Receber"
+                        }])
+                        df_mensal = pd.concat([df_mensal, nova_parc], ignore_index=True)
+                    df_mensal.to_csv(ARQ_MENSAL, index=False)
+
                     st.success("Aluno cadastrado! Vencimentos gerados para o dia 10 de cada mês.")
                     st.rerun()
                 except Exception as e:
@@ -118,91 +111,86 @@ if menu == "Alunos":
 
     st.divider()
     st.subheader("Alunos Cadastrados")
-    if alunos:
-        for a in alunos:
-            with st.expander(f"{a[1]} | {a[2]}"):
-                st.write(f"📅 Matrícula: {a[3]} | Ano: {a[4]}")
-                st.write(f"💰 Valor: {formatar_valor(a[5])} | Parcelas: {a[6]}")
-                st.write(f"📆 Início: {NOMES_MESES[a[7]-1]} | Turno: {a[8]}")
+    if not df_alunos.empty:
+        for _, a in df_alunos.iterrows():
+            with st.expander(f"{a['nome']} | {a['responsavel']}"):
+                st.write(f"📅 Matrícula: {a['data_matricula']} | Ano: {a['ano_letivo']}")
+                st.write(f"💰 Valor: {formatar_valor(a['valor_mensal'])} | Parcelas: {a['qtd_parcelas']}")
+                st.write(f"📆 Início: {NOMES_MESES[int(a['mes_inicial'])-1]} | Turno: {a['turno']}")
                 
-                # Confirmação de exclusão
-                if f"conf_excl_{a[0]}" not in st.session_state:
-                    st.session_state[f"conf_excl_{a[0]}"] = False
+                # CONFIRMAÇÃO ANTES DE EXCLUIR
+                if f"conf_excl_{a['id_aluno']}" not in st.session_state:
+                    st.session_state[f"conf_excl_{a['id_aluno']}"] = False
                 
-                if not st.session_state[f"conf_excl_{a[0]}"]:
-                    if st.button(f"🗑️ Excluir {a[1]}", key=f"btn_excl_{a[0]}"):
-                        st.session_state[f"conf_excl_{a[0]}"] = True
+                if not st.session_state[f"conf_excl_{a['id_aluno']}"]:
+                    if st.button(f"🗑️ Excluir {a['nome']}", key=f"btn_excl_{a['id_aluno']}"):
+                        st.session_state[f"conf_excl_{a['id_aluno']}"] = True
                         st.rerun()
                 else:
                     st.warning("⚠️ Tem certeza que quer excluir este aluno e todas as suas mensalidades?")
                     col_nao, col_sim = st.columns(2)
-                    if col_nao.button("❌ Não", key=f"nao_excl_{a[0]}"):
-                        st.session_state[f"conf_excl_{a[0]}"] = False
+                    if col_nao.button("❌ Não", key=f"nao_excl_{a['id_aluno']}"):
+                        st.session_state[f"conf_excl_{a['id_aluno']}"] = False
                         st.rerun()
-                    if col_sim.button("✅ Sim, excluir", key=f"sim_excl_{a[0]}"):
-                        conn = conectar()
-                        conn.execute("DELETE FROM alunos WHERE id_aluno=?", (a[0],))
-                        conn.commit()
-                        conn.close()
+                    if col_sim.button("✅ Sim, excluir", key=f"sim_excl_{a['id_aluno']}"):
+                        df_alunos = df_alunos[df_alunos["id_aluno"] != a["id_aluno"]]
+                        df_mensal = pd.read_csv(ARQ_MENSAL)
+                        df_mensal = df_mensal[df_mensal["id_aluno"] != a["id_aluno"]]
+                        df_alunos.to_csv(ARQ_ALUNOS, index=False)
+                        df_mensal.to_csv(ARQ_MENSAL, index=False)
                         st.success("Aluno e mensalidades excluídos com sucesso!")
-                        st.session_state[f"conf_excl_{a[0]}"] = False
+                        st.session_state[f"conf_excl_{a['id_aluno']}"] = False
                         st.rerun()
     else:
         st.info("Nenhum aluno cadastrado ainda.")
 
 # ------------------------------
-# TELA DE MENSALIDADES COM BAIXA RÁPIDA
+# TELA DE MENSALIDADES
 # ------------------------------
 elif menu == "Mensalidades":
     st.subheader("Controle de Mensalidades")
-    conn = conectar()
-    lista_alunos = conn.execute("SELECT id_aluno, nome FROM alunos ORDER BY nome").fetchall()
-    conn.close()
-    if not lista_alunos:
+    df_alunos = pd.read_csv(ARQ_ALUNOS)
+    df_mensal = pd.read_csv(ARQ_MENSAL)
+    if df_alunos.empty:
         st.warning("Cadastre um aluno primeiro!")
     else:
-        id_escolhido = st.selectbox("Selecione o Aluno", lista_alunos, format_func=lambda x: x[1])[0]
-        conn = conectar()
-        mensais = conn.execute("SELECT * FROM mensalidades WHERE id_aluno=? ORDER BY mes_ano", (id_escolhido,)).fetchall()
-        conn.close()
+        id_escolhido = st.selectbox("Selecione o Aluno", df_alunos["nome"], index=0)
+        id_aluno = df_alunos[df_alunos["nome"] == id_escolhido]["id_aluno"].values[0]
+        mensais = df_mensal[df_mensal["id_aluno"] == id_aluno].sort_values("mes_ano")
         hoje = datetime.now().strftime("%d/%m/%Y")
 
         st.divider()
-        for m in mensais:
-            status_exib = "Atrasada" if m[5] == "A Receber" and data_valida(m[4]) and datetime.strptime(m[4],"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y") else m[5]
+        for _, m in mensais.iterrows():
+            status_exib = "Atrasada" if m["status"] == "A Receber" and data_valida(m["vencimento"]) and datetime.strptime(m["vencimento"],"%d/%m/%Y") < datetime.strptime(hoje,"%d/%m/%Y") else m["status"]
             cor = "🔴" if status_exib == "Atrasada" else ("🟢" if status_exib == "Quitada" else "🟡")
             with st.container(border=True):
                 col1, col2, col3, col4, col5, col6 = st.columns(6)
-                col1.write(f"**{m[2]}**")
-                col2.write(formatar_valor(m[3]))
-                col3.write(f"Venc: {m[4]}")
+                col1.write(f"**{m['mes_ano']}**")
+                col2.write(formatar_valor(m["valor"]))
+                col3.write(f"Venc: {m['vencimento']}")
                 col4.write(f"{cor} {status_exib}")
-                if m[5] != "Quitada" and col5.button(f"✅ Dar Baixa", key=f"baixar_{m[0]}"):
-                    conn = conectar()
-                    conn.execute('''UPDATE mensalidades SET status='Quitada', data_pagamento=? WHERE id_mensalidade=?''',
-                                (hoje, m[0]))
-                    conn.commit()
-                    conn.close()
+                if m["status"] != "Quitada" and col5.button(f"✅ Dar Baixa", key=f"baixar_{m['id_mensalidade']}"):
+                    df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["status", "data_pagamento"]] = ["Quitada", hoje]
+                    df_mensal.to_csv(ARQ_MENSAL, index=False)
                     st.success("Baixa registrada com sucesso!")
                     st.rerun()
-                if col6.button(f"Editar", key=f"edt_{m[0]}"):
+                if col6.button(f"Editar", key=f"editar_{m['id_mensalidade']}"):
                     st.session_state["editando"] = m
-                if "editando" in st.session_state and st.session_state["editando"][0] == m[0]:
-                    with st.form(f"form_mensal_{m[0]}", clear_on_submit=True):
-                        novo_valor = st.text_input("Valor R$", value=str(m[3]).replace('.',','))
-                        novo_venc = st.text_input("Vencimento", value=m[4])
-                        novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m[5]=="A Receber" else 1)
-                        dt_pg = st.text_input("Data Pagamento", value=m[6] if m[5]=="Quitada" else hoje)
+                if "editando" in st.session_state and st.session_state["editando"]["id_mensalidade"] == m["id_mensalidade"]:
+                    with st.form(f"form_mensal_{m['id_mensalidade']}", clear_on_submit=True):
+                        novo_valor = st.text_input("Valor R$", value=str(m["valor"]).replace('.',','))
+                        novo_venc = st.text_input("Vencimento", value=m["vencimento"])
+                        novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m["status"]=="A Receber" else 1)
+                        dt_pg = st.text_input("Data Pagamento", value=m["data_pagamento"] if m["status"]=="Quitada" else hoje)
                         if st.form_submit_button("Salvar Alteração"):
                             if not data_valida(novo_venc):
                                 st.error("Data de vencimento inválida! Use dd/mm/aaaa")
                             else:
-                                conn = conectar()
-                                conn.execute('''UPDATE mensalidades SET valor=?, vencimento=?, data_pagamento=?, status=? WHERE id_mensalidade=?''',
-                                            (float(novo_valor.replace(',','.')), novo_venc, dt_pg if novo_status=="Quitada" else None, novo_status, m[0]))
-                                conn.commit()
-                                conn.close()
-                                st.success("Atualizado!")
+                                df_mensal.loc[df_mensal["id_mensalidade"] == m["id_mensalidade"], ["valor", "vencimento", "status", "data_pagamento"]] = [
+                                    float(novo_valor.replace(',','.')), novo_venc, novo_status, dt_pg if novo_status=="Quitada" else None
+                                ]
+                                df_mensal.to_csv(ARQ_MENSAL, index=False)
+                                st.success("Atualizado com sucesso!")
                                 del st.session_state["editando"]
                                 st.rerun()
 
@@ -212,8 +200,8 @@ elif menu == "Mensalidades":
 elif menu == "Relatórios":
     st.subheader("Relatórios")
     tipo = st.radio("Escolha", ["Todos", "A Receber", "Atrasadas", "Quitadas", "Por Período"], horizontal=True)
-    
-    conn = conectar()
+    df_alunos = pd.read_csv(ARQ_ALUNOS)
+    df_mensal = pd.read_csv(ARQ_MENSAL)
     hoje = datetime.now().strftime("%d/%m/%Y")
     dados = None
     titulo_rel = ""
@@ -224,61 +212,39 @@ elif menu == "Relatórios":
         dt_inicio = col_d1.text_input("Data Início (dd/mm/aaaa)", value="01/01/2026")
         dt_fim = col_d2.text_input("Data Fim (dd/mm/aaaa)", value=hoje)
         titulo_rel = f"Relatório de {dt_inicio} até {dt_fim}"
-        
-        if not data_valida(dt_inicio) or not data_valida(dt_fim):
-            st.error("Use datas válidas no formato dd/mm/aaaa")
-        else:
-            dados = conn.execute('''
-                SELECT a.nome AS Aluno, m.mes_ano AS "Mês/Ano", m.valor AS Valor, m.vencimento AS Vencimento, m.status AS Status 
-                FROM mensalidades m 
-                JOIN alunos a ON m.id_aluno = a.id_aluno 
-                WHERE m.vencimento BETWEEN ? AND ?
-                ORDER BY m.vencimento
-            ''', (dt_inicio, dt_fim)).fetchall()
-
+        if data_valida(dt_inicio) and data_valida(dt_fim):
+            dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
+            dados = dados[(dados["vencimento"] >= dt_inicio) & (dados["vencimento"] <= dt_fim)]
     elif tipo == "Todos":
         titulo_rel = "Relatório Geral de Mensalidades"
-        dados = conn.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno ORDER BY m.vencimento").fetchall()
+        dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
     elif tipo == "A Receber":
         titulo_rel = "Relatório - A Receber"
-        dados = conn.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno WHERE m.status='A Receber' AND m.vencimento>=?", (hoje,)).fetchall()
+        dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
+        dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] >= hoje)]
     elif tipo == "Atrasadas":
         titulo_rel = "Relatório - Atrasadas"
-        dados = conn.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno WHERE m.status='A Receber' AND m.vencimento<?", (hoje,)).fetchall()
-    else: # Quitadas
+        dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
+        dados = dados[(dados["status"] == "A Receber") & (dados["vencimento"] < hoje)]
+    else:
         titulo_rel = "Relatório - Quitadas"
-        dados = conn.execute("SELECT a.nome, m.mes_ano, m.valor, m.data_pagamento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno WHERE m.status='Quitada' ORDER BY m.vencimento").fetchall()
+        dados = df_mensal.merge(df_alunos, on="id_aluno", how="left")
+        dados = dados[dados["status"] == "Quitada"]
 
-    if dados:
-        # Converte para DataFrame para formatar e imprimir
-        df = pd.DataFrame(dados, columns=["Aluno", "Mês/Ano", "Valor", "Data", "Status"])
-        df["Valor"] = df["Valor"].apply(formatar_valor)
-        total = sum(d[2] for d in dados)
-
+    if dados is not None and not dados.empty:
+        exibe = dados[["nome", "mes_ano", "valor", "vencimento", "status"]].copy()
+        exibe["valor"] = exibe["valor"].apply(formatar_valor)
+        total = dados["valor"].sum()
         st.subheader(titulo_rel)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(exibe, use_container_width=True)
         st.subheader(f"Total: {formatar_valor(total)}")
 
-        # 🖨️ BOTÃO DE IMPRESSÃO
         st.divider()
-        st.info("🖨️ Para imprimir: clique no botão abaixo → use Ctrl+P ou o ícone de impressora do navegador")
+        st.info("🖨️ Aperte Ctrl+P ou o ícone de impressora do navegador para imprimir ou salvar em PDF")
         if st.button("🖨️ Visualizar para Imprimir"):
-            st.markdown(f'''
-            <div style="text-align: center; font-family: Arial;">
-                <h2>{titulo_rel}</h2>
-                <p>Emitido em: {hoje}</p>
-                <hr>
-            </div>
-            ''', unsafe_allow_html=True)
-            st.table(df)
-            st.markdown(f'''
-            <div style="text-align: right; font-size: 18px; font-weight: bold; margin-top: 20px;">
-                Total Geral: {formatar_valor(total)}
-            </div>
-            ''', unsafe_allow_html=True)
-            st.success("✅ Agora aperte **Ctrl + P** ou clique no ícone de impressora do navegador para salvar em PDF ou imprimir!")
-
+            st.markdown(f"<h2 style='text-align:center;'>{titulo_rel}</h2><p style='text-align:center;'>Emitido em: {hoje}</p><hr>", unsafe_allow_html=True)
+            st.table(exibe)
+            st.markdown(f"<div style='text-align:right; font-weight:bold; font-size:18px;'>Total Geral: {formatar_valor(total)}</div>", unsafe_allow_html=True)
+            st.success("✅ Agora imprima ou salve em PDF!")
     elif tipo != "Por Período" or (tipo == "Por Período" and data_valida(dt_inicio) and data_valida(dt_fim)):
         st.info("Sem registros para esse filtro.")
-    
-    conn.close()
