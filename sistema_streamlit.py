@@ -35,7 +35,6 @@ def data_valida(data):
     try: datetime.strptime(str(data), "%d/%m/%Y"); return True
     except: return False
 
-# CARREGAR COM TIPOS CERTOS
 def carregar_alunos():
     df = pd.read_csv(ARQ_ALUNOS, dtype={
         "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
@@ -159,7 +158,7 @@ if menu == "Alunos":
         st.info("Nenhum aluno cadastrado ainda.")
 
 # ------------------------------
-# TELA DE MENSALIDADES - CORRIGIDO ERRO DE FORMULÁRIO E ALTERAÇÃO ÚNICA
+# TELA DE MENSALIDADES - FINALMENTE CORRIGIDO
 # ------------------------------
 elif menu == "Mensalidades":
     st.subheader("Controle de Mensalidades")
@@ -187,9 +186,10 @@ elif menu == "Mensalidades":
                 col2.write(formatar_valor(m["valor"]))
                 col3.write(f"Venc: {m['vencimento']}")
                 col4.write(f"{cor} {status_exib}")
-                # NOME DO FORMULÁRIO AGORA É 100% ÚNICO
-                form_nome = f"form_parcela_{int(m['id_mensalidade'])}_{m['mes_ano'].replace('/','_')}"
-                if col5.button(f"Editar", key=f"btn_editar_{int(m['id_mensalidade'])}"):
+                # ✅ CHAVE ÚNICA: ID + MÊS/ANO
+                id_unico = f"{int(m['id_mensalidade'])}_{m['mes_ano'].replace('/','_')}"
+                form_nome = f"form_parcela_{id_unico}"
+                if col5.button(f"Editar", key=f"btn_editar_{id_unico}"):
                     st.session_state["editando_id"] = int(m["id_mensalidade"])
                     st.session_state["editando_mes"] = m["mes_ano"]
                 if ("editando_id" in st.session_state and 
