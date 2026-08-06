@@ -50,10 +50,11 @@ def valor_valido(valor_str):
     except:
         return False
 
-def calcular_multa(valor_principal, percentual_multa, dias_atraso):
+# ✅ MULTA FIXA: só aplica se estiver atrasado, independente de dias
+def calcular_multa(valor_principal, percentual_multa, dias_atraso=0):
     if dias_atraso <= 0:
         return 0.0
-    return round(valor_principal * (percentual_multa / 100) * dias_atraso, 2)
+    return round(valor_principal * (percentual_multa / 100), 2)
 
 def carregar_alunos():
     if not os.path.exists(ARQ_ALUNOS):
@@ -63,7 +64,6 @@ def carregar_alunos():
         "ano_letivo": int, "valor_mensal": float, "multa_percentual": float,
         "qtd_parcelas": int, "mes_inicial": int, "turno": str
     })
-    # Preenche multa 0 para alunos antigos que não tem o campo
     if "multa_percentual" not in df.columns:
         df["multa_percentual"] = 0.0
     return df
@@ -94,7 +94,7 @@ LISTA_MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11",
 # INICIALIZAR
 # ------------------------------
 inicializar_arquivos()
-st.set_page_config(page_title="Controle Mensalidades - Web", layout="wide")
+st.set_page_config(page_title="Controle Mensalidades - Versão Web", layout="wide")
 st.title("📚 Controle de Mensalidades - Versão Web")
 
 # ------------------------------
@@ -109,7 +109,6 @@ if menu == "Alunos":
     st.subheader("Cadastro de Alunos")
     df_alunos = carregar_alunos()
 
-    # 🔍 BUSCA RÁPIDA
     busca = st.text_input("🔍 Buscar por Nome ou Responsável", placeholder="Digite para filtrar...")
     if busca.strip():
         df_alunos = df_alunos[
@@ -126,7 +125,7 @@ if menu == "Alunos":
         ano = col4.number_input("Ano Letivo", value=datetime.now().year, min_value=2020)
         col5, col6, col7, col8 = st.columns(4)
         valor = col5.text_input("Valor Mensal R$", value="0,00")
-        multa_perc = col6.number_input("Multa % por dia", min_value=0.0, max_value=5.0, step=0.1, value=0.0)
+        multa_perc = col6.number_input("Multa % fixa por atraso", min_value=0.0, max_value=10.0, step=0.5, value=2.0)
         parcelas = col7.number_input("Nº Parcelas", value=12, min_value=1, max_value=24)
         mes_inic = col8.selectbox("Mês Inicial", NOMES_MESES, index=0)
         turno = st.selectbox("Turno", ["Manhã", "Tarde", "Noite"])
@@ -192,7 +191,7 @@ if menu == "Alunos":
         for _, a in df_alunos.iterrows():
             with st.expander(f"{a['nome']} | Responsável: {a['responsavel']}"):
                 st.write(f"📅 Matrícula: {a['data_matricula']} | Ano: {a['ano_letivo']}")
-                st.write(f"💰 Valor: {formatar_valor(a['valor_mensal'])} | Multa: {a['multa_percentual']}% ao dia")
+                st.write(f"💰 Valor: {formatar_valor(a['valor_mensal'])} | Multa fixa: {a['multa_percentual']}%")
                 st.write(f"📆 Parcelas: {a['qtd_parcelas']} | Início: {NOMES_MESES[int(a['mes_inicial'])-1]} | Turno: {a['turno']}")
                 
                 id_aluno_atual = a["id_aluno"]
@@ -230,7 +229,6 @@ if menu == "Alunos":
                         st.session_state[key_conf_excl] = False
                         st.rerun()
 
-                # 📝 FORMULÁRIO DE EDIÇÃO
                 if st.session_state[key_editar]:
                     st.divider()
                     st.subheader("Editar Dados do Aluno")
@@ -240,7 +238,7 @@ if menu == "Alunos":
                         e_dt_mat = st.text_input("Data Matrícula", value=a["data_matricula"])
                         e_ano = st.number_input("Ano Letivo", value=int(a["ano_letivo"]), min_value=2020)
                         e_valor = st.text_input("Valor Mensal R$", value=str(a["valor_mensal"]).replace('.', ','))
-                        e_multa = st.number_input("Multa % por dia", min_value=0.0, max_value=5.0, step=0.1, value=float(a["multa_percentual"]))
+                        e_multa = st.number_input("Multa % fixa por atraso", min_value=0.0, max_value=10.0, step=0.5, value=float(a["multa_percentual"]))
                         e_parc = st.number_input("Nº Parcelas", value=int(a["qtd_parcelas"]), min_value=1, max_value=24)
                         e_mes_inic = st.selectbox("Mês Inicial", NOMES_MESES, index=int(a["mes_inicial"])-1)
                         e_turno = st.selectbox("Turno", ["Manhã", "Tarde", "Noite"], index=["Manhã", "Tarde", "Noite"].index(a["turno"]))
@@ -311,7 +309,6 @@ elif menu == "Mensalidades":
                     dias_atraso = (hoje_dt - venc_dt).days
                     status_exib = "Atrasada"
                     multa_calculada = calcular_multa(float(m["valor"]), multa_perc_aluno, dias_atraso)
-                    # Atualiza multa no registro se mudou
                     if float(m["multa_valor"]) != multa_calculada:
                         df_mensal.at[idx, "multa_valor"] = multa_calculada
                         df_mensal.to_csv(ARQ_MENSAL, index=False)
