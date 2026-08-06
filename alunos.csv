@@ -1,5 +1,20 @@
 id_aluno,nome,responsavel,data_matricula,ano_letivo,valor_mensal,qtd_parcelas,mes_inicial,turno,multa_percentual
-1,Ana Beatriz,Talita,06/08/2026,2026,385.0,3,7,Manhã,9.0
-2,Helena Rocha,Geise,06/08/2026,2026,230.0,3,6,Manhã,9.0
-3,Henzo Cruz,Paulo Cezar,06/08/2026,2026,410.0,3,7,Manhã,9.0
+1,Ana Beatriz Baia,Talita de Aquino Baia,06/08/2026,2026,418.0,5,8,Tarde,9.0
+4,Ana Beatriz Correa  Peres/Sophia,Alan Tinoco L Peres,06/08/2026,2026,704.0,5,8,Tarde,9.0
+11,Ana Liz  Laruro A Mello,Ana Paula Lauro Amaral,06/08/2026,2026,320.0,5,8,Manhã,9.0
+13,Ariane Brandão Souza,Beatriz Oliveira Mendes,06/08/2026,2026,400.0,5,8,Tarde,9.0
+12,Brayan Luis B da Silva,Ariane Brandão Souza,06/08/2026,2026,418.0,5,8,Manhã,9.0
+15,Camila Pereira Gazeta,Caroline Alves G Almeida,06/08/2026,2026,320.0,5,8,Manhã,9.0
+2,Helena M Rocha,Raiane Beatriz M Rocha,06/08/2026,2026,352.0,5,8,Tarde,9.0
+3,Henzo Cruz dos Santos,Paulo Cezar LIma dos Santos,06/08/2026,2026,418.0,5,7,Tarde,9.0
+6,Isadora Cristina V Abel,Aline Cristina S Abel,06/08/2026,2026,320.0,6,8,Tarde,9.0
+5,Kauê Bernardo S Ribeiro,Alexandra Camila da Silva,06/08/2026,2026,280.0,5,8,Manhã,9.0
+7,Lucca/Theo Rampunni,Aline Gomes da Costa,06/08/2026,2026,638.0,5,8,Tarde,9.0
+8,Luna Fernandes Neves,Amanda Teles Fernandes,06/08/2026,2026,400.0,5,8,Tarde,9.0
+10,MIrella do Espirito Santos,MIrella do Espirito Santos,06/08/2026,2026,418.0,5,8,Tarde,9.0
+14,Maria Luiza P de Almeida,Camila Pereira Gazeta,06/08/2026,2026,385.0,5,8,Tarde,9.0
+16,Mariana Camila S Farias,Cassia Camila S F Conceição,06/08/2026,2026,380.0,5,8,Tarde,9.0
+9,Maya Viana de A Acioly,Amanda Viana de A Santana,06/08/2026,2026,407.0,5,8,Manhã,9.0
+17,Raphael Tarso,Cintia Macedo da S Araujo,06/08/2026,2026,385.0,5,8,Tarde,2.0
+
 
