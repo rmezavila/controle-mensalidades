@@ -2,23 +2,58 @@ id_aluno,nome,responsavel,data_matricula,ano_letivo,valor_mensal,qtd_parcelas,me
 1,Ana Beatriz Baia,Talita de Aquino Baia,06/08/2026,2026,418.0,5,8,Tarde,9.0
 4,Ana Beatriz Correa  Peres/Sophia,Alan Tinoco L Peres,06/08/2026,2026,704.0,5,8,Tarde,9.0
 11,Ana Liz  Laruro A Mello,Ana Paula Lauro Amaral,06/08/2026,2026,320.0,5,8,Manhã,9.0
+26,Antonella  Oliveira de Aquino,Emily Ferreira Oliveira,06/08/2026,2026,400.0,5,8,Manhã,9.0
 13,Ariane Brandão Souza,Beatriz Oliveira Mendes,06/08/2026,2026,400.0,5,8,Tarde,9.0
+49,Benjamin G DIas,Roberta Ramos S G Santos,06/08/2026,2026,380.0,5,8,Manhã,9.0
 12,Brayan Luis B da Silva,Ariane Brandão Souza,06/08/2026,2026,418.0,5,8,Manhã,9.0
+32,Bryan Nascimento Barc.,Jainara da Silva Nascimento,06/08/2026,2026,320.0,5,8,Tarde,9.0
+24,Caio Aguiar GOmes,Ellen da SIlva de Moraes,06/08/2026,2026,352.0,5,8,Tarde,9.0
 21,Davi Brandão Vendramini,Cristiliane Santos P Brandão,06/08/2026,2026,320.0,5,8,Tarde,9.0
+36,Davi Dutra Barbosa,Josilene Dutra B Barbosa,06/08/2026,2026,385.0,5,8,Manhã,9.0
+31,Davi Fontoura,Horrana Pereira Fontoura,06/08/2026,2026,350.0,5,8,Manhã,9.5
+35,Emanuelly V A Coelho,Jorge Leandro Dias Coelho,06/08/2026,2026,320.0,5,8,Tarde,9.0
+54,Enzo/Thayla,Thayane Mansur Bomfim,06/08/2026,2026,640.0,5,8,Tarde,9.0
+53,Ezequiel Barreto Pinheiro,Thais da Conceição Pinheiro,06/08/2026,2026,407.0,5,8,Manhã,9.0
+37,Flavio/Julia,Joyce Carolina S Santos,06/08/2026,2026,660.0,5,8,Tarde,9.0
+47,Gabriel Salles,Raquel Salles,06/08/2026,2026,363.0,5,8,Manhã,9.0
 20,Gabriel Willian,Cristiane Rezende S Almeida,06/08/2026,2026,352.0,5,8,Tarde,9.0
+34,Gael Camara Bonfim,Jordan Tavares B Bonfim,06/08/2026,2026,418.0,5,8,Manhã,9.0
+42,Gleicyane E,Marta Valéria R E Macedo,06/08/2026,2026,320.0,5,8,Tarde,9.0
 2,Helena M Rocha,Raiane Beatriz M Rocha,06/08/2026,2026,352.0,5,8,Tarde,9.0
+46,Helena M Rocha,Raiane Beatriz M Rocha,06/08/2026,2026,352.0,5,8,Tarde,9.0
 3,Henzo Cruz dos Santos,Paulo Cezar LIma dos Santos,06/08/2026,2026,418.0,5,7,Tarde,9.0
+45,Henzo Cruz dos Santos,Paulo Cezar LIma dos Santos,06/08/2026,2026,418.0,5,8,Tarde,9.0
+25,Icaro Lorenzo M Ribeiro,Elma da Silva Mota,06/08/2026,2026,385.0,5,8,Tarde,9.0
+40,Isaac Luiz R Ambrosio,Luiz Carlos Ambrosio,06/08/2026,2026,418.0,5,8,Tarde,9.0
 6,Isadora Cristina V Abel,Aline Cristina S Abel,06/08/2026,2026,320.0,6,8,Tarde,9.0
 5,Kauê Bernardo S Ribeiro,Alexandra Camila da Silva,06/08/2026,2026,280.0,5,8,Manhã,9.0
 15,Laura Guimaraes,Caroline Alves G Almeida,06/08/2026,2026,320.0,5,8,Manhã,9.0
 7,Lucca/Theo Rampunni,Aline Gomes da Costa,06/08/2026,2026,638.0,5,8,Tarde,9.0
+23,Luiza Vitória A da Silva,Danielle Farias A Mesquita,06/08/2026,2026,350.0,5,8,Manhã,9.0
 8,Luna Fernandes Neves,Amanda Teles Fernandes,06/08/2026,2026,400.0,5,8,Tarde,9.0
 10,MIrella do Espirito Santos,MIrella do Espirito Santos,06/08/2026,2026,418.0,5,8,Tarde,9.0
+56,Marcelle Neves da Costa,Yasmin Cardoso N da Costa,06/08/2026,2026,320.0,5,8,Manhã,9.0
+50,Maria Helena Cohen,Ruth Gongalves S Moura,06/08/2026,2026,320.0,5,8,Tarde,9.0
+57,Maria Luiza Nascimento,Yasmin dos S do Nascimento,06/08/2026,2026,400.0,5,8,Tarde,9.0
 14,Maria Luiza P de Almeida,Camila Pereira Gazeta,06/08/2026,2026,385.0,5,8,Tarde,9.0
 18,Maria Luiza P de Almeida,Camila Pereira Gazeta,06/08/2026,2026,385.0,5,8,Tarde,9.0
 16,Mariana Camila S Farias,Cassia Camila S F Conceição,06/08/2026,2026,380.0,5,8,Tarde,9.0
+30,Matheus Herodice de J Dias,Herodice Dias Junior,06/08/2026,2026,363.0,5,8,Manhã,9.0
 9,Maya Viana de A Acioly,Amanda Viana de A Santana,06/08/2026,2026,407.0,5,8,Manhã,9.0
+29,Miguel Ribeiro França,Geise Ribeiro da C França,06/08/2026,2026,319.0,5,8,Tarde,9.0
+43,Mirella Alves MAcedo,Monique da SIlva Alves,06/08/2026,2026,352.0,5,8,Tarde,9.0
+48,Mirella C Estevão,Renan da Silva Estevão,06/08/2026,2026,320.0,5,8,Tarde,9.0
+33,Naomi Rosa Marques,Jisele Martins Faustino,06/08/2026,2026,352.0,5,8,Manhã,9.0
 22,Noah de Souza Patrício,Daniele Ferreira de Souza,06/08/2026,2026,380.0,5,8,Manhã,9.0
+38,Pedro Lucas P Batalha,Juliana da Silva Paes,06/08/2026,2026,370.0,5,8,Manhã,9.0
 17,Raphael Tarso,Cintia Macedo da S Araujo,06/08/2026,2026,385.0,5,8,Tarde,2.0
+28,Roberto Medeiros Escala,Francilane Medeiros Batista,06/08/2026,2026,320.0,5,8,Manhã,9.0
+41,Sara Vaz de Souza,Luiz Carlos de S Junior,06/08/2026,2026,385.0,5,8,Manhã,9.0
+39,Sophia Pinheiro R Motta,Julio Cesar R da Motta,06/08/2026,2026,385.0,5,8,Manhã,9.0
+51,Theo Alves Souza,Suelen Alves Farias,06/08/2026,2026,407.0,5,8,Manhã,9.0
 19,Theo Robledo da Silva,Crisnanda Ferreira  A da Silva,06/08/2026,2026,385.0,5,8,Manhã,9.0
-23,Luiza Vitória A da Silva,Danielle Farias A Mesquita,06/08/2026,2026,350.0,5,8,Manhã,9.0
+55,Tiago Tavares F Borba,Viviane Tavares F Borba,06/08/2026,2026,418.0,5,8,Tarde,9.0
+52,Valcy Neto A A Rosa,Suzane Araújo de A Rosa,06/08/2026,2026,385.0,5,8,Manhã,9.0
+44,Vicente Rodrigues N Motta,Neoli Rodrigues N Alves,06/08/2026,2026,462.0,5,8,Manhã,9.0
+27,Yan Matheus Duarte Cunha,Fatima Santana Rodrigues,06/08/2026,2026,320.0,5,8,Manhã,9.0
+58,Noah Muniz Esteves,Fernanda Muniz Baptista Esteves,06/08/2026,2026,320.0,5,8,Manhã,9.0
