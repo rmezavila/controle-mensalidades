@@ -1,1 +1,3 @@
-
+id_aluno,nome,responsavel,data_matricula,ano_letivo,valor_mensal,qtd_parcelas,mes_inicial,turno,multa_percentual
+1,Ana Beatriz,Talita,06/08/2026,2026,385.0,3,7,Manhã,9.0
+2,Helena Rocha,Geise,06/08/2026,2026,230.0,3,6,Manhã,9.0
