@@ -12,12 +12,12 @@ ARQ_ALUNOS = "alunos.csv"
 ARQ_MENSAL = "mensalidades.csv"
 
 def inicializar_arquivos():
-    if not os.path.exists(ARQ_ALUNOS):
+    if not os.path.exists(ARQ_ALUNOS) or os.path.getsize(ARQ_ALUNOS) == 0:
         pd.DataFrame(columns=[
             "id_aluno", "nome", "responsavel", "data_matricula",
             "ano_letivo", "valor_mensal", "multa_percentual", "qtd_parcelas", "mes_inicial", "turno"
         ]).to_csv(ARQ_ALUNOS, index=False)
-    if not os.path.exists(ARQ_MENSAL):
+    if not os.path.exists(ARQ_MENSAL) or os.path.getsize(ARQ_MENSAL) == 0:
         pd.DataFrame(columns=[
             "id_mensalidade", "id_aluno", "mes_ano", "valor",
             "vencimento", "data_pagamento", "status", "multa_valor"
@@ -61,26 +61,36 @@ def calcular_multa(valor_principal, percentual_multa, dias_atraso=0):
         return 0.0
     return round(valor_principal * (percentual_multa / 100), 2)
 
+# ✅ FUNÇÃO DE CARREGAMENTO CORRIGIDA: NÃO DÁ ERRO SE ARQUIVO ESTIVER VAZIO
 def carregar_alunos():
-    if not os.path.exists(ARQ_ALUNOS):
-        inicializar_arquivos()
-    df = pd.read_csv(ARQ_ALUNOS, dtype={
-        "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
-        "ano_letivo": int, "valor_mensal": float, "multa_percentual": float,
-        "qtd_parcelas": int, "mes_inicial": int, "turno": str
-    })
+    inicializar_arquivos()
+    try:
+        df = pd.read_csv(ARQ_ALUNOS, dtype={
+            "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
+            "ano_letivo": int, "valor_mensal": float, "multa_percentual": float,
+            "qtd_parcelas": int, "mes_inicial": int, "turno": str
+        })
+    except pd.errors.EmptyDataError:
+        df = pd.DataFrame(columns=[
+            "id_aluno", "nome", "responsavel", "data_matricula",
+            "ano_letivo", "valor_mensal", "multa_percentual", "qtd_parcelas", "mes_inicial", "turno"
+        ])
     if "multa_percentual" not in df.columns:
         df["multa_percentual"] = 0.0
-    # ✅ SEMPRE ORDENA POR NOME AUTOMATICAMENTE
     return df.sort_values(by="nome", ignore_index=True)
 
 def carregar_mensalidades():
-    if not os.path.exists(ARQ_MENSAL):
-        inicializar_arquivos()
-    df = pd.read_csv(ARQ_MENSAL, dtype={
-        "id_mensalidade": int, "id_aluno": int, "mes_ano": str, "valor": float,
-        "vencimento": str, "data_pagamento": str, "status": str, "multa_valor": float
-    })
+    inicializar_arquivos()
+    try:
+        df = pd.read_csv(ARQ_MENSAL, dtype={
+            "id_mensalidade": int, "id_aluno": int, "mes_ano": str, "valor": float,
+            "vencimento": str, "data_pagamento": str, "status": str, "multa_valor": float
+        })
+    except pd.errors.EmptyDataError:
+        df = pd.DataFrame(columns=[
+            "id_mensalidade", "id_aluno", "mes_ano", "valor",
+            "vencimento", "data_pagamento", "status", "multa_valor"
+        ])
     if "multa_valor" not in df.columns:
         df["multa_valor"] = 0.0
     return df
@@ -122,7 +132,6 @@ if menu == "Alunos":
             df_alunos["nome"].apply(remover_acentos).str.contains(busca_normalizada, na=False) |
             df_alunos["responsavel"].apply(remover_acentos).str.contains(busca_normalizada, na=False)
         ]
-        # ✅ MANTÉM ORDEM ALFABÉTICA MESMO APÓS BUSCA
         df_alunos = df_alunos.sort_values(by="nome", ignore_index=True)
 
     with st.form("form_aluno", clear_on_submit=True):
@@ -306,13 +315,11 @@ elif menu == "Mensalidades":
         st.info("💡 Clique no nome do aluno para ver e gerenciar suas parcelas")
         st.divider()
 
-        # ✅ MENSALIDADES ORGANIZADAS POR ALUNO (FECHADAS POR PADRÃO)
         for _, aluno in df_alunos.iterrows():
             id_aluno = aluno["id_aluno"]
             multa_perc_aluno = float(aluno["multa_percentual"])
             mensais = df_mensal[df_mensal["id_aluno"] == id_aluno].copy()
 
-            # Conta status para mostrar no resumo
             qtde_atrasadas = len(mensais[(mensais["status"] == "A Receber") & (pd.to_datetime(mensais["vencimento"], format="%d/%m/%Y", errors="coerce").dt.date < hoje_dt)])
             qtde_receber = len(mensais[(mensais["status"] == "A Receber") & (pd.to_datetime(mensais["vencimento"], format="%d/%m/%Y", errors="coerce").dt.date >= hoje_dt)])
             qtde_pagas = len(mensais[mensais["status"] == "Quitada"])
