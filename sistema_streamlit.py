@@ -37,19 +37,16 @@ def formatar_valor(valor):
     except (ValueError, TypeError):
         return "R$ 0,00"
 
-def data_valida(data):
-    try:
-        datetime.strptime(str(data).strip(), "%d/%m/%Y")
-        return True
-    except ValueError:
-        return False
+def data_para_texto(data):
+    if isinstance(data, date):
+        return data.strftime("%d/%m/%Y")
+    return str(data).strip() if data else ""
 
-def valor_valido(valor_str):
+def texto_para_data(texto):
     try:
-        float(valor_str.replace('.', '').replace(',', '.'))
-        return True
-    except:
-        return False
+        return datetime.strptime(str(texto).strip(), "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        return None
 
 def remover_acentos(texto):
     if not isinstance(texto, str):
@@ -61,7 +58,6 @@ def calcular_multa(valor_principal, percentual_multa, dias_atraso=0):
         return 0.0
     return round(valor_principal * (percentual_multa / 100), 2)
 
-# ✅ FUNÇÃO DE CARREGAMENTO CORRIGIDA: NÃO DÁ ERRO SE ARQUIVO ESTIVER VAZIO
 def carregar_alunos():
     inicializar_arquivos()
     try:
@@ -139,7 +135,10 @@ if menu == "Alunos":
         nome = col1.text_input("Nome Completo")
         resp = col2.text_input("Responsável")
         col3, col4 = st.columns(2)
-        dt_mat = col3.text_input("Data Matrícula", value=datetime.now().strftime("%d/%m/%Y"))
+        
+        dt_mat_cal = col3.date_input("📅 Data Matrícula", value=datetime.now(), format="DD/MM/YYYY")
+        dt_mat = data_para_texto(dt_mat_cal)
+        
         ano = col4.number_input("Ano Letivo", value=datetime.now().year, min_value=2020)
         col5, col6, col7, col8 = st.columns(4)
         valor = col5.text_input("Valor Mensal R$", value="0,00")
@@ -153,20 +152,21 @@ if menu == "Alunos":
             erros = []
             if not nome.strip(): erros.append("Informe o nome do aluno")
             if not resp.strip(): erros.append("Informe o responsável")
-            if not data_valida(dt_mat): erros.append("Data de matrícula inválida (use dd/mm/aaaa)")
-            if not valor_valido(valor): erros.append("Valor mensal inválido (use apenas números)")
+            try:
+                valor_float = float(valor.replace('.', '').replace(',', '.'))
+            except:
+                erros.append("Valor mensal inválido (use apenas números)")
 
             if erros:
                 for e in erros: st.error(f"❌ {e}")
             else:
                 try:
-                    valor_float = float(valor.replace('.', '').replace(',', '.'))
                     mi_num = NOMES_MESES.index(mes_inic) + 1
                     novo_id = gerar_proximo_id(carregar_alunos(), "id_aluno")
                     
                     novo_aluno = pd.DataFrame([{
                         "id_aluno": novo_id, "nome": nome.strip(), "responsavel": resp.strip(),
-                        "data_matricula": dt_mat.strip(), "ano_letivo": int(ano),
+                        "data_matricula": dt_mat, "ano_letivo": int(ano),
                         "valor_mensal": valor_float, "multa_percentual": float(multa_perc),
                         "qtd_parcelas": int(parcelas), "mes_inicial": mi_num, "turno": turno
                     }])
@@ -250,10 +250,16 @@ if menu == "Alunos":
                 if st.session_state[key_editar]:
                     st.divider()
                     st.subheader("Editar Dados do Aluno")
+                    
+                    dt_mat_atual = texto_para_data(a["data_matricula"]) or datetime.now().date()
+                    
                     with st.form(f"form_editar_aluno_{id_aluno_atual}", clear_on_submit=False):
                         e_nome = st.text_input("Nome Completo", value=a["nome"])
                         e_resp = st.text_input("Responsável", value=a["responsavel"])
-                        e_dt_mat = st.text_input("Data Matrícula", value=a["data_matricula"])
+                        
+                        e_dt_mat_cal = st.date_input("📅 Data Matrícula", value=dt_mat_atual, format="DD/MM/YYYY")
+                        e_dt_mat = data_para_texto(e_dt_mat_cal)
+                        
                         e_ano = st.number_input("Ano Letivo", value=int(a["ano_letivo"]), min_value=2020)
                         e_valor = st.text_input("Valor Mensal R$", value=str(a["valor_mensal"]).replace('.', ','))
                         e_multa = st.number_input("Multa % fixa por atraso", min_value=0.0, max_value=10.0, step=0.5, value=float(a["multa_percentual"]))
@@ -272,8 +278,10 @@ if menu == "Alunos":
                             erros_ed = []
                             if not e_nome.strip(): erros_ed.append("Informe o nome do aluno")
                             if not e_resp.strip(): erros_ed.append("Informe o responsável")
-                            if not data_valida(e_dt_mat): erros_ed.append("Data de matrícula inválida")
-                            if not valor_valido(e_valor): erros_ed.append("Valor mensal inválido")
+                            try:
+                                float(e_valor.replace('.', '').replace(',', '.'))
+                            except:
+                                erros_ed.append("Valor mensal inválido")
 
                             if erros_ed:
                                 for err in erros_ed: st.error(f"❌ {err}")
@@ -284,7 +292,7 @@ if menu == "Alunos":
                                         "nome", "responsavel", "data_matricula", "ano_letivo",
                                         "valor_mensal", "multa_percentual", "qtd_parcelas", "mes_inicial", "turno"
                                     ]] = [
-                                        e_nome.strip(), e_resp.strip(), e_dt_mat.strip(), int(e_ano),
+                                        e_nome.strip(), e_resp.strip(), e_dt_mat, int(e_ano),
                                         float(e_valor.replace('.', '').replace(',', '.')), float(e_multa),
                                         int(e_parc), NOMES_MESES.index(e_mes_inic) + 1, e_turno
                                     ]
@@ -337,15 +345,14 @@ elif menu == "Mensalidades":
                     dias_atraso = 0
                     multa_calculada = 0.0
 
-                    if status_exib == "A Receber" and data_valida(str(m["vencimento"])):
-                        venc_dt = datetime.strptime(str(m["vencimento"]).strip(), "%d/%m/%Y").date()
-                        if venc_dt < hoje_dt:
-                            dias_atraso = (hoje_dt - venc_dt).days
-                            status_exib = "Atrasada"
-                            multa_calculada = calcular_multa(float(m["valor"]), multa_perc_aluno, dias_atraso)
-                            if float(m["multa_valor"]) != multa_calculada:
-                                df_mensal.at[idx, "multa_valor"] = multa_calculada
-                                df_mensal.to_csv(ARQ_MENSAL, index=False)
+                    venc_dt = texto_para_data(str(m["vencimento"]))
+                    if venc_dt and status_exib == "A Receber" and venc_dt < hoje_dt:
+                        dias_atraso = (hoje_dt - venc_dt).days
+                        status_exib = "Atrasada"
+                        multa_calculada = calcular_multa(float(m["valor"]), multa_perc_aluno, dias_atraso)
+                        if float(m["multa_valor"]) != multa_calculada:
+                            df_mensal.at[idx, "multa_valor"] = multa_calculada
+                            df_mensal.to_csv(ARQ_MENSAL, index=False)
 
                     cor = "🔴" if status_exib == "Atrasada" else ("🟢" if status_exib == "Quitada" else "🟡")
                     dt_pag_exib = m["data_pagamento"] if str(m["data_pagamento"]).strip() else "--"
@@ -368,28 +375,39 @@ elif menu == "Mensalidades":
                         if st.session_state.get("editando_idx") == idx:
                             with st.form(f"form_parcela_{idx}", clear_on_submit=False):
                                 novo_valor = st.text_input("Valor R$", value=str(m["valor"]).replace('.', ','))
-                                novo_venc = st.text_input("Vencimento (dd/mm/aaaa)", value=str(m["vencimento"]))
+                                
+                                venc_atual = texto_para_data(str(m["vencimento"])) or hoje_dt
+                                dt_pg_atual = texto_para_data(str(m["data_pagamento"])) or None
+                                
+                                novo_venc_cal = st.date_input("📅 Vencimento", value=venc_atual, format="DD/MM/YYYY")
+                                novo_venc = data_para_texto(novo_venc_cal)
+                                
                                 nova_multa = st.text_input("Multa R$", value=str(m["multa_valor"]).replace('.', ','))
                                 novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m["status"] == "A Receber" else 1)
-                                dt_pg = st.text_input("Data Pagamento (dd/mm/aaaa)", value=str(m["data_pagamento"]) if m["status"] == "Quitada" else "")
+                                
+                                dt_pg_cal = st.date_input("📅 Data Pagamento (se quitada)", value=dt_pg_atual, format="DD/MM/YYYY")
+                                dt_pg = data_para_texto(dt_pg_cal) if novo_status == "Quitada" else ""
                                 
                                 if st.form_submit_button("Salvar Alteração"):
                                     erros = []
-                                    if not data_valida(novo_venc): erros.append("Data de vencimento inválida")
-                                    if not valor_valido(novo_valor): erros.append("Valor inválido")
-                                    if not valor_valido(nova_multa): erros.append("Valor da multa inválido")
-                                    if novo_status == "Quitada" and dt_pg.strip() and not data_valida(dt_pg):
-                                        erros.append("Data de pagamento inválida")
+                                    try:
+                                        float(novo_valor.replace('.', '').replace(',', '.'))
+                                    except:
+                                        erros.append("Valor inválido")
+                                    try:
+                                        float(nova_multa.replace('.', '').replace(',', '.'))
+                                    except:
+                                        erros.append("Valor da multa inválido")
 
                                     if erros:
                                         for e in erros: st.error(f"❌ {e}")
                                     else:
                                         try:
                                             df_mensal.at[idx, "valor"] = float(novo_valor.replace('.', '').replace(',', '.'))
-                                            df_mensal.at[idx, "vencimento"] = novo_venc.strip()
+                                            df_mensal.at[idx, "vencimento"] = novo_venc
                                             df_mensal.at[idx, "multa_valor"] = float(nova_multa.replace('.', '').replace(',', '.'))
                                             df_mensal.at[idx, "status"] = novo_status
-                                            df_mensal.at[idx, "data_pagamento"] = dt_pg.strip() if novo_status == "Quitada" else ""
+                                            df_mensal.at[idx, "data_pagamento"] = dt_pg
                                             
                                             df_mensal.to_csv(ARQ_MENSAL, index=False)
                                             st.success("✅ Parcela atualizada!")
@@ -421,34 +439,37 @@ elif menu == "Relatórios":
         if tipo == "Por Período":
             st.write("---")
             col_d1, col_d2 = st.columns(2)
-            dt_inicio_str = col_d1.text_input("Data Início (dd/mm/aaaa)", value="01/01/2026")
-            dt_fim_str = col_d2.text_input("Data Fim (dd/mm/aaaa)", value=hoje_str)
+            
+            dt_inicio_cal = col_d1.date_input("📅 Data Início", value=date(2026,1,1), format="DD/MM/YYYY")
+            dt_fim_cal = col_d2.date_input("📅 Data Fim", value=hoje_dt, format="DD/MM/YYYY")
+            dt_inicio_str = data_para_texto(dt_inicio_cal)
+            dt_fim_str = data_para_texto(dt_fim_cal)
+            
             status_periodo = st.radio("Filtrar por Status", ["Todos", "A Receber", "Atrasadas", "Quitadas"], horizontal=True)
             
             titulo_rel = f"Relatório: {status_periodo} | Período: {dt_inicio_str} até {dt_fim_str}"
 
-            if data_valida(dt_inicio_str) and data_valida(dt_fim_str):
-                d_inicio = datetime.strptime(dt_inicio_str, "%d/%m/%Y").date()
-                d_fim = datetime.strptime(dt_fim_str, "%d/%m/%Y").date()
+            d_inicio = dt_inicio_cal
+            d_fim = dt_fim_cal
 
-                dados = df_completo[(df_completo["vencimento_dt"] >= d_inicio) & (df_completo["vencimento_dt"] <= d_fim)]
+            dados = df_completo[(df_completo["vencimento_dt"] >= d_inicio) & (df_completo["vencimento_dt"] <= d_fim)]
 
-                if status_periodo == "A Receber":
-                    dados = dados[(dados["status"] == "A Receber") & (dados["vencimento_dt"] >= hoje_dt)]
-                elif status_periodo == "Atrasadas":
-                    dados = dados[(dados["status"] == "A Receber") & (dados["vencimento_dt"] < hoje_dt)]
-                elif status_periodo == "Quitadas":
-                    dados = dados[dados["status"] == "Quitada"]
+            if status_periodo == "A Receber":
+                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento_dt"] >= hoje_dt)]
+            elif status_periodo == "Atrasadas":
+                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento_dt"] < hoje_dt)]
+            elif status_periodo == "Quitadas":
+                dados = dados[dados["status"] == "Quitada"]
 
         elif tipo == "Todos":
             titulo_rel = "Relatório Geral de Mensalidades"
             dados = df_completo
         elif tipo == "A Receber":
             titulo_rel = "Relatório - Mensalidades A Receber"
-            dados = df_completo[(df_completo["status"] == "A Receber") & (dados["vencimento_dt"] >= hoje_dt)]
+            dados = df_completo[(df_completo["status"] == "A Receber") & (df_completo["vencimento_dt"] >= hoje_dt)]
         elif tipo == "Atrasadas":
             titulo_rel = "Relatório - Mensalidades Atrasadas"
-            dados = df_completo[(df_completo["status"] == "A Receber") & (dados["vencimento_dt"] < hoje_dt)]
+            dados = df_completo[(df_completo["status"] == "A Receber") & (df_completo["vencimento_dt"] < hoje_dt)]
         elif tipo == "Quitadas":
             titulo_rel = "Relatório - Mensalidades Quitadas"
             dados = df_completo[df_completo["status"] == "Quitada"]
