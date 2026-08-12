@@ -253,7 +253,7 @@ elif menu == "Consultar Aluno":
         st.write("💳 Mensalidades:")
         if not mensal.empty:
             mensal["valor"] = mensal["valor"].apply(lambda x: formatar_valor(x))
-            st.dataframe(mensal.style.applymap(cor_status, subset=["status"]), use_container_width=True, hide_index=True)
+            st.dataframe(mensal.style.map(cor_status, subset=["status"]), use_container_width=True, hide_index=True)
         else:
             st.info("Sem mensalidades.")
     else:
@@ -275,7 +275,7 @@ elif menu == "Lançar Pagamento":
         conn.close()
         if not mensal.empty:
             mensal["valor"] = mensal["valor"].apply(lambda x: formatar_valor(x))
-            st.dataframe(mensal.style.applymap(cor_status, subset=["status"]), use_container_width=True, hide_index=True)
+            st.dataframe(mensal.style.map(cor_status, subset=["status"]), use_container_width=True, hide_index=True)
             with st.form("pagto"):
                 id_m = st.selectbox("Mês/Ano", options=mensal["id_mensalidade"],
                     format_func=lambda x: mensal[mensal["id_mensalidade"]==x]["mes_ano"].values[0])
@@ -357,7 +357,7 @@ elif menu == "Relatórios":
     if not rel.empty:
         rel["Valor"] = rel["Valor"].apply(lambda x: f"{x:.2f}".replace(".",","))
         total = rel["Valor"].str.replace(",",".").astype(float).sum()
-        st.dataframe(rel.style.applymap(cor_status, subset=["Status"]), use_container_width=True, hide_index=True)
+        st.dataframe(rel.style.map(cor_status, subset=["Status"]), use_container_width=True, hide_index=True)
         st.subheader(f"💰 Total: {formatar_valor(total)}")
         
         col1, col2 = st.columns(2)
