@@ -1,506 +1,730 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime, date
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import sqlite3
+from datetime import datetime
+import shutil
 import os
-from io import BytesIO
-import unicodedata
+import subprocess
+import sys
 
 # ------------------------------
-# ARQUIVOS DE DADOS
+# BANCO DE DADOS
 # ------------------------------
-ARQ_ALUNOS = "alunos.csv"
-ARQ_MENSAL = "mensalidades.csv"
+def conectar():
+    return sqlite3.connect('controle_mensalidades_novo.db', timeout=5)
 
-def inicializar_arquivos():
-    if not os.path.exists(ARQ_ALUNOS) or os.path.getsize(ARQ_ALUNOS) == 0:
-        pd.DataFrame(columns=[
-            "id_aluno", "nome", "responsavel", "data_matricula",
-            "ano_letivo", "valor_mensal", "multa_percentual", "qtd_parcelas", "mes_inicial", "turno"
-        ]).to_csv(ARQ_ALUNOS, index=False)
-    if not os.path.exists(ARQ_MENSAL) or os.path.getsize(ARQ_MENSAL) == 0:
-        pd.DataFrame(columns=[
-            "id_mensalidade", "id_aluno", "mes_ano", "valor",
-            "vencimento", "data_pagamento", "status", "multa_valor"
-        ]).to_csv(ARQ_MENSAL, index=False)
+def criar_banco():
+    conn = conectar()
+    cur = conn.cursor()
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS alunos (
+        id_aluno INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        responsavel TEXT NOT NULL,
+        data_matricula TEXT NOT NULL,
+        ano_letivo INTEGER NOT NULL,
+        valor_mensal REAL NOT NULL,
+        qtd_parcelas INTEGER NOT NULL,
+        mes_inicial INTEGER NOT NULL,
+        turno TEXT NOT NULL
+    )''')
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS mensalidades (
+        id_mensalidade INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_aluno INTEGER NOT NULL,
+        mes_ano TEXT NOT NULL,
+        valor REAL NOT NULL,
+        vencimento TEXT NOT NULL,
+        data_pagamento TEXT,
+        status TEXT DEFAULT 'A Receber',
+        FOREIGN KEY (id_aluno) REFERENCES alunos(id_aluno) ON DELETE CASCADE,
+        UNIQUE(id_aluno, mes_ano)
+    )''')
+    conn.commit()
+    conn.close()
 
-def gerar_proximo_id(df, coluna_id):
-    if df.empty or coluna_id not in df.columns:
-        return 1
-    return int(df[coluna_id].max() + 1)
+# ------------------------------
+# BACKUP AUTOMÁTICO
+# ------------------------------
+def fazer_backup():
+    try:
+        arq = "controle_mensalidades_novo.db"
+        pasta = "BACKUPS"
+        if not os.path.exists(pasta):
+            os.makedirs(pasta)
+        dh = datetime.now().strftime("%Y%m%d_%H%M")
+        shutil.copy2(arq, os.path.join(pasta, f"backup_{dh}.db"))
+        arquivos = sorted(
+            [os.path.join(pasta, f) for f in os.listdir(pasta) if f.startswith("backup_")],
+            key=os.path.getmtime
+        )
+        if len(arquivos) > 10:
+            os.remove(arquivos[0])
+    except Exception as e:
+        print(f"Erro no backup: {e}")
 
 # ------------------------------
 # FUNÇÕES AUXILIARES
 # ------------------------------
 def formatar_valor(valor):
+    return f"R$ {valor:,.2f}".replace('.', '#').replace(',', '.').replace('#', ',')
+
+def data_valida(data):
     try:
-        return f"R$ {float(valor):,.2f}".replace('.', '#').replace(',', '.').replace('#', ',')
-    except (ValueError, TypeError):
-        return "R$ 0,00"
-
-def data_para_texto(data):
-    if isinstance(data, date):
-        return data.strftime("%d/%m/%Y")
-    return str(data).strip() if data else ""
-
-def texto_para_data(texto):
-    try:
-        return datetime.strptime(str(texto).strip(), "%d/%m/%Y").date()
-    except (ValueError, TypeError):
-        return None
-
-def remover_acentos(texto):
-    if not isinstance(texto, str):
-        return ""
-    return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII').lower()
-
-def calcular_multa(valor_principal, percentual_multa, dias_atraso=0):
-    if dias_atraso <= 0:
-        return 0.0
-    return round(valor_principal * (percentual_multa / 100), 2)
-
-def carregar_alunos():
-    inicializar_arquivos()
-    try:
-        df = pd.read_csv(ARQ_ALUNOS, dtype={
-            "id_aluno": int, "nome": str, "responsavel": str, "data_matricula": str,
-            "ano_letivo": int, "valor_mensal": float, "multa_percentual": float,
-            "qtd_parcelas": int, "mes_inicial": int, "turno": str
-        })
-    except pd.errors.EmptyDataError:
-        df = pd.DataFrame(columns=[
-            "id_aluno", "nome", "responsavel", "data_matricula",
-            "ano_letivo", "valor_mensal", "multa_percentual", "qtd_parcelas", "mes_inicial", "turno"
-        ])
-    if "multa_percentual" not in df.columns:
-        df["multa_percentual"] = 0.0
-    return df.sort_values(by="nome", ignore_index=True)
-
-def carregar_mensalidades():
-    inicializar_arquivos()
-    try:
-        df = pd.read_csv(ARQ_MENSAL, dtype={
-            "id_mensalidade": int, "id_aluno": int, "mes_ano": str, "valor": float,
-            "vencimento": str, "data_pagamento": str, "status": str, "multa_valor": float
-        })
-    except pd.errors.EmptyDataError:
-        df = pd.DataFrame(columns=[
-            "id_mensalidade", "id_aluno", "mes_ano", "valor",
-            "vencimento", "data_pagamento", "status", "multa_valor"
-        ])
-    if "multa_valor" not in df.columns:
-        df["multa_valor"] = 0.0
-    return df
-
-def gerar_excel(df, nome_arquivo):
-    saida = BytesIO()
-    with pd.ExcelWriter(saida, engine='openpyxl') as escritor:
-        df.to_excel(escritor, index=False, sheet_name='Relatório')
-    saida.seek(0)
-    return saida
+        datetime.strptime(data.strip(), "%d/%m/%Y")
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 LISTA_MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
 # ------------------------------
-# INICIALIZAR
+# JANELA DE RELATÓRIO
 # ------------------------------
-inicializar_arquivos()
-st.set_page_config(page_title="Controle Mensalidades - Versão Web", layout="wide")
-st.title("📚 Controle de Mensalidades - Versão Web")
+class Relatorio(tk.Toplevel):
+    def __init__(self, mestre, titulo, texto, periodo=""):
+        super().__init__(mestre)
+        self.title(titulo)
+        self.geometry("850x600")
+        self.transient(mestre)
+        self.grab_set()
 
-# ------------------------------
-# MENU LATERAL
-# ------------------------------
-menu = st.sidebar.selectbox("Menu", ["Alunos", "Mensalidades", "Relatórios"])
+        quadro = ttk.Frame(self, padding=10)
+        quadro.pack(fill=tk.BOTH, expand=True)
 
-# ------------------------------
-# TELA DE ALUNOS
-# ------------------------------
-if menu == "Alunos":
-    st.subheader("Cadastro de Alunos")
-    df_alunos = carregar_alunos()
+        ttk.Label(quadro, text=titulo, font=("Arial", 14, "bold")).pack(pady=5)
+        if periodo:
+            ttk.Label(quadro, text=f"Período: {periodo}", font=("Arial", 11, "italic")).pack(pady=2)
 
-    busca = st.text_input("🔍 Buscar por Nome ou Responsável", placeholder="Digite para filtrar...")
-    if busca.strip():
-        busca_normalizada = remover_acentos(busca)
-        df_alunos = df_alunos[
-            df_alunos["nome"].apply(remover_acentos).str.contains(busca_normalizada, na=False) |
-            df_alunos["responsavel"].apply(remover_acentos).str.contains(busca_normalizada, na=False)
-        ]
-        df_alunos = df_alunos.sort_values(by="nome", ignore_index=True)
+        self.texto = tk.Text(quadro, font=("Courier New", 9), wrap=tk.NONE)
+        v = ttk.Scrollbar(quadro, orient="vertical", command=self.texto.yview)
+        h = ttk.Scrollbar(quadro, orient="horizontal", command=self.texto.xview)
+        self.texto.configure(yscrollcommand=v.set, xscrollcommand=h.set)
+        v.pack(side=tk.RIGHT, fill=tk.Y)
+        h.pack(side=tk.BOTTOM, fill=tk.X)
+        self.texto.pack(fill=tk.BOTH, expand=True)
+        self.texto.insert("1.0", texto)
+        self.texto.config(state="disabled")
 
-    with st.form("form_aluno", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        nome = col1.text_input("Nome Completo")
-        resp = col2.text_input("Responsável")
-        col3, col4 = st.columns(2)
-        
-        dt_mat_cal = col3.date_input("📅 Data Matrícula", value=datetime.now(), format="DD/MM/YYYY")
-        dt_mat = data_para_texto(dt_mat_cal)
-        
-        ano = col4.number_input("Ano Letivo", value=datetime.now().year, min_value=2020)
-        col5, col6, col7, col8 = st.columns(4)
-        valor = col5.text_input("Valor Mensal R$", value="0,00")
-        multa_perc = col6.number_input("Multa % fixa por atraso", min_value=0.0, max_value=10.0, step=0.5, value=2.0)
-        parcelas = col7.number_input("Nº Parcelas", value=12, min_value=1, max_value=24)
-        mes_inic = col8.selectbox("Mês Inicial", NOMES_MESES, index=0)
-        turno = st.selectbox("Turno", ["Manhã", "Tarde", "Noite"])
-        salvar = st.form_submit_button("💾 Salvar Aluno")
+        botoes = ttk.Frame(self, padding=5)
+        botoes.pack(fill=tk.X)
+        ttk.Button(botoes, text="🖨️ Imprimir", command=self.imprimir).pack(side=tk.LEFT, padx=5)
+        ttk.Button(botoes, text="❌ Fechar", command=self.destroy).pack(side=tk.RIGHT, padx=5)
 
-        if salvar:
-            erros = []
-            if not nome.strip(): erros.append("Informe o nome do aluno")
-            if not resp.strip(): erros.append("Informe o responsável")
-            try:
-                valor_float = float(valor.replace('.', '').replace(',', '.'))
-            except:
-                erros.append("Valor mensal inválido (use apenas números)")
+        self.conteudo = f"{titulo}\n"
+        if periodo:
+            self.conteudo += f"Período: {periodo}\n"
+        self.conteudo += f"Emitido em: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n" + "-" * 65 + "\n\n" + texto
 
-            if erros:
-                for e in erros: st.error(f"❌ {e}")
+    def imprimir(self):
+        try:
+            temp = os.path.join(os.environ.get("TEMP", "."), "rel_temp.txt")
+            with open(temp, "w", encoding="utf-8") as f:
+                f.write("\f" + self.conteudo + "\n\n")
+
+            if sys.platform == "win32":
+                subprocess.run(["notepad.exe", "/p", temp], check=True)
+                messagebox.showinfo("Sucesso", "Relatório enviado para a impressora!")
             else:
-                try:
-                    mi_num = NOMES_MESES.index(mes_inic) + 1
-                    novo_id = gerar_proximo_id(carregar_alunos(), "id_aluno")
-                    
-                    novo_aluno = pd.DataFrame([{
-                        "id_aluno": novo_id, "nome": nome.strip(), "responsavel": resp.strip(),
-                        "data_matricula": dt_mat, "ano_letivo": int(ano),
-                        "valor_mensal": valor_float, "multa_percentual": float(multa_perc),
-                        "qtd_parcelas": int(parcelas), "mes_inicial": mi_num, "turno": turno
-                    }])
-                    df_alunos_atual = pd.concat([carregar_alunos(), novo_aluno], ignore_index=True)
-                    df_alunos_atual.to_csv(ARQ_ALUNOS, index=False)
+                messagebox.showinfo("Aviso", f"Arquivo salvo em:\n{temp}\nImprima manualmente.")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível imprimir:\n{e}\nArquivo: {temp}")
 
-                    df_mensal = carregar_mensalidades()
-                    proximo_id_mensal = gerar_proximo_id(df_mensal, "id_mensalidade")
-                    
-                    novas_parcelas = []
-                    base = mi_num - 1
-                    for i in range(int(parcelas)):
-                        mes_idx = (base + i) % 12
-                        ano_parc = int(ano) + ((base + i) // 12)
-                        ma = f"{LISTA_MESES[mes_idx]}/{ano_parc}"
-                        ve = f"10/{LISTA_MESES[mes_idx]}/{ano_parc}"
-                        
-                        novas_parcelas.append({
-                            "id_mensalidade": proximo_id_mensal + i,
-                            "id_aluno": novo_id, 
-                            "mes_ano": ma, 
-                            "valor": valor_float,
-                            "vencimento": ve, 
-                            "data_pagamento": "", 
-                            "status": "A Receber",
-                            "multa_valor": 0.0
-                        })
-                    
-                    df_mensal = pd.concat([df_mensal, pd.DataFrame(novas_parcelas)], ignore_index=True)
-                    df_mensal.to_csv(ARQ_MENSAL, index=False)
+# ------------------------------
+# TELA PRINCIPAL
+# ------------------------------
+class Sistema:
+    def __init__(self, janela):
+        self.janela = janela
+        self.janela.title("Controle de Mensalidades - SALVAR ALUNO CORRIGIDO")
+        self.janela.geometry("1280x720")
+        criar_banco()
+        fazer_backup()
 
-                    st.success("✅ Aluno cadastrado! Vencimentos gerados para o dia 10 de cada mês.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar aluno: {str(e)}")
+        self.id_aluno = None
+        self.id_mensal = None
+        self.lista_alunos = []
 
-    st.divider()
-    st.subheader("Alunos Cadastrados (Ordem Alfabética)")
-    if not df_alunos.empty:
-        for _, a in df_alunos.iterrows():
-            with st.expander(f"{a['nome']} | Responsável: {a['responsavel']}"):
-                st.write(f"📅 Matrícula: {a['data_matricula']} | Ano: {a['ano_letivo']}")
-                st.write(f"💰 Valor: {formatar_valor(a['valor_mensal'])} | Multa fixa: {a['multa_percentual']}%")
-                st.write(f"📆 Parcelas: {a['qtd_parcelas']} | Início: {NOMES_MESES[int(a['mes_inicial'])-1]} | Turno: {a['turno']}")
-                
-                id_aluno_atual = a["id_aluno"]
-                key_editar = f"editar_aluno_{id_aluno_atual}"
-                key_conf_excl = f"conf_excl_{id_aluno_atual}"
+        self.cor_atrasada = "#ffd6d6"
+        self.cor_quitada = "#d6ffd6"
+        self.cor_receber = "#ffffd6"
 
-                if key_editar not in st.session_state:
-                    st.session_state[key_editar] = False
-                if key_conf_excl not in st.session_state:
-                    st.session_state[key_conf_excl] = False
+        self.montar_interface()
+        self.carregar_alunos()
 
-                col_ed, col_ex = st.columns(2)
-                if col_ed.button("✏️ Editar", key=f"btn_ed_al_{id_aluno_atual}"):
-                    st.session_state[key_editar] = True
-                    st.rerun()
+    def montar_interface(self):
+        # Menu
+        menu = tk.Menu(self.janela)
+        self.janela.config(menu=menu)
+        menu_rel = tk.Menu(menu, tearoff=0)
+        menu.add_cascade(label="Relatórios", menu=menu_rel)
+        menu_rel.add_command(label="Todos os Alunos", command=lambda: self.rel_todos())
+        menu_rel.add_separator()
+        menu_rel.add_command(label="A Receber", command=lambda: self.rel_a_receber())
+        menu_rel.add_command(label="Atrasadas", command=lambda: self.rel_atrasadas())
+        menu_rel.add_command(label="Quitadas", command=lambda: self.rel_quitadas())
+        menu_rel.add_separator()
+        menu_rel.add_command(label="Por Período", command=self.rel_periodo)
 
-                if not st.session_state[key_conf_excl]:
-                    if col_ex.button(f"🗑️ Excluir", key=f"btn_excl_{id_aluno_atual}"):
-                        st.session_state[key_conf_excl] = True
-                        st.rerun()
-                else:
-                    st.warning("⚠️ Tem certeza que deseja excluir este aluno e todas as suas mensalidades?")
-                    col_nao, col_sim = st.columns(2)
-                    if col_nao.button("❌ Não", key=f"nao_excl_{id_aluno_atual}"):
-                        st.session_state[key_conf_excl] = False
-                        st.rerun()
-                    if col_sim.button("✅ Sim, excluir", key=f"sim_excl_{id_aluno_atual}"):
-                        df_alunos_full = carregar_alunos()
-                        df_alunos_full = df_alunos_full[df_alunos_full["id_aluno"] != id_aluno_atual]
-                        df_mensal = carregar_mensalidades()
-                        df_mensal = df_mensal[df_mensal["id_aluno"] != id_aluno_atual]
-                        df_alunos_full.to_csv(ARQ_ALUNOS, index=False)
-                        df_mensal.to_csv(ARQ_MENSAL, index=False)
-                        st.success("✅ Aluno e mensalidades excluídos com sucesso!")
-                        st.session_state[key_conf_excl] = False
-                        st.rerun()
+        ttk.Label(self.janela, text="Controle de Mensalidades", font=("Arial", 16, "bold")).pack(pady=10)
 
-                if st.session_state[key_editar]:
-                    st.divider()
-                    st.subheader("Editar Dados do Aluno")
-                    
-                    dt_mat_atual = texto_para_data(a["data_matricula"]) or datetime.now().date()
-                    
-                    with st.form(f"form_editar_aluno_{id_aluno_atual}", clear_on_submit=False):
-                        e_nome = st.text_input("Nome Completo", value=a["nome"])
-                        e_resp = st.text_input("Responsável", value=a["responsavel"])
-                        
-                        e_dt_mat_cal = st.date_input("📅 Data Matrícula", value=dt_mat_atual, format="DD/MM/YYYY")
-                        e_dt_mat = data_para_texto(e_dt_mat_cal)
-                        
-                        e_ano = st.number_input("Ano Letivo", value=int(a["ano_letivo"]), min_value=2020)
-                        e_valor = st.text_input("Valor Mensal R$", value=str(a["valor_mensal"]).replace('.', ','))
-                        e_multa = st.number_input("Multa % fixa por atraso", min_value=0.0, max_value=10.0, step=0.5, value=float(a["multa_percentual"]))
-                        e_parc = st.number_input("Nº Parcelas", value=int(a["qtd_parcelas"]), min_value=1, max_value=24)
-                        e_mes_inic = st.selectbox("Mês Inicial", NOMES_MESES, index=int(a["mes_inicial"])-1)
-                        e_turno = st.selectbox("Turno", ["Manhã", "Tarde", "Noite"], index=["Manhã", "Tarde", "Noite"].index(a["turno"]))
+        principal = ttk.Frame(self.janela, padding=10)
+        principal.pack(fill=tk.BOTH, expand=True)
 
-                        salva_ed = st.form_submit_button("💾 Salvar Alterações")
-                        cancela_ed = st.form_submit_button("❌ Cancelar")
+        # Lado esquerdo
+        esq = ttk.LabelFrame(principal, text="Alunos Cadastrados", padding=8)
+        esq.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
 
-                        if cancela_ed:
-                            st.session_state[key_editar] = False
-                            st.rerun()
+        self.lista_box = tk.Listbox(esq, width=30, height=25, font=("Arial", 10))
+        self.lista_box.pack(fill=tk.BOTH, expand=True)
+        self.lista_box.bind("<<ListboxSelect>>", self.selecionar_aluno)
 
-                        if salva_ed:
-                            erros_ed = []
-                            if not e_nome.strip(): erros_ed.append("Informe o nome do aluno")
-                            if not e_resp.strip(): erros_ed.append("Informe o responsável")
-                            try:
-                                float(e_valor.replace('.', '').replace(',', '.'))
-                            except:
-                                erros_ed.append("Valor mensal inválido")
+        ttk.Button(esq, text="Atualizar Lista", command=self.carregar_alunos).pack(fill=tk.X, pady=3)
+        ttk.Button(esq, text="Ver e Imprimir Aluno", command=self.imprimir_aluno).pack(fill=tk.X, pady=3)
+        ttk.Button(esq, text="🗑️ Excluir Aluno", command=self.excluir_aluno).pack(fill=tk.X, pady=3)
 
-                            if erros_ed:
-                                for err in erros_ed: st.error(f"❌ {err}")
-                            else:
-                                try:
-                                    df_alunos_full = carregar_alunos()
-                                    df_alunos_full.loc[df_alunos_full["id_aluno"] == id_aluno_atual, [
-                                        "nome", "responsavel", "data_matricula", "ano_letivo",
-                                        "valor_mensal", "multa_percentual", "qtd_parcelas", "mes_inicial", "turno"
-                                    ]] = [
-                                        e_nome.strip(), e_resp.strip(), e_dt_mat, int(e_ano),
-                                        float(e_valor.replace('.', '').replace(',', '.')), float(e_multa),
-                                        int(e_parc), NOMES_MESES.index(e_mes_inic) + 1, e_turno
-                                    ]
-                                    df_alunos_full.to_csv(ARQ_ALUNOS, index=False)
-                                    st.success("✅ Dados do aluno atualizados!")
-                                    st.session_state[key_editar] = False
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao editar: {str(e)}")
-    else:
-        if busca.strip():
-            st.info("ℹ️ Nenhum aluno encontrado com esse termo. Apague o texto para ver todos.")
+        # Lado direito
+        dir_frame = ttk.Frame(principal)
+        dir_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        ttk.Button(dir_frame, text="+ Novo Aluno", command=self.limpar_campos).pack(anchor="w", pady=(0, 8))
+
+        quadro_aluno = ttk.LabelFrame(dir_frame, text="Dados do Aluno", padding=10)
+        quadro_aluno.pack(fill=tk.X, pady=5)
+
+        ttk.Label(quadro_aluno, text="Nome:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.nome = ttk.Entry(quadro_aluno, width=35)
+        self.nome.grid(row=0, column=1, padx=5)
+
+        ttk.Label(quadro_aluno, text="Responsável:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.resp = ttk.Entry(quadro_aluno, width=30)
+        self.resp.grid(row=0, column=3, padx=5)
+
+        ttk.Label(quadro_aluno, text="Data Matrícula:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.dt_mat = ttk.Entry(quadro_aluno, width=12)
+        self.dt_mat.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        self.dt_mat.grid(row=1, column=1, padx=5)
+
+        ttk.Label(quadro_aluno, text="Ano Letivo:").grid(row=1, column=2, padx=5, pady=5, sticky="w")
+        self.ano = ttk.Entry(quadro_aluno, width=8)
+        self.ano.insert(0, str(datetime.now().year))
+        self.ano.grid(row=1, column=3, padx=5)
+
+        ttk.Label(quadro_aluno, text="Valor Mensal R$:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.valor = ttk.Entry(quadro_aluno, width=12)
+        self.valor.grid(row=2, column=1, padx=5)
+
+        ttk.Label(quadro_aluno, text="Parcelas:").grid(row=2, column=2, padx=5, pady=5, sticky="w")
+        self.parcelas = ttk.Entry(quadro_aluno, width=6)
+        self.parcelas.insert(0, "12")
+        self.parcelas.grid(row=2, column=3, padx=5)
+
+        ttk.Label(quadro_aluno, text="Mês Inicial:").grid(row=2, column=4, padx=5, pady=5, sticky="w")
+        self.mes_inic = ttk.Combobox(quadro_aluno, values=NOMES_MESES, state="readonly", width=12)
+        self.mes_inic.current(0)
+        self.mes_inic.grid(row=2, column=5, padx=5)
+
+        ttk.Label(quadro_aluno, text="Turno:").grid(row=2, column=6, padx=5, pady=5, sticky="w")
+        self.turno = ttk.Combobox(quadro_aluno, values=["Manhã", "Tarde", "Noite"], state="readonly", width=10)
+        self.turno.current(0)
+        self.turno.grid(row=2, column=7, padx=5)
+
+        ttk.Button(quadro_aluno, text="💾 Salvar Aluno", command=self.salvar_aluno).grid(row=3, column=0, columnspan=8, pady=10)
+
+        # Controle de Mensalidades
+        quadro_mensal = ttk.LabelFrame(dir_frame, text="Controle de Mensalidades", padding=10)
+        quadro_mensal.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        ttk.Label(quadro_mensal, text="Mês/Ano:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.mesano = ttk.Entry(quadro_mensal, width=10, state="readonly")
+        self.mesano.grid(row=0, column=1, padx=5)
+
+        ttk.Label(quadro_mensal, text="Valor R$:").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.valor_mes = ttk.Entry(quadro_mensal, width=12)
+        self.valor_mes.grid(row=0, column=3, padx=5)
+
+        ttk.Label(quadro_mensal, text="Vencimento:").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.venc = ttk.Entry(quadro_mensal, width=12)
+        self.venc.grid(row=0, column=5, padx=5)
+
+        ttk.Label(quadro_mensal, text="Status:").grid(row=0, column=6, padx=5, pady=5, sticky="w")
+        self.status = ttk.Combobox(quadro_mensal, values=["A Receber", "Quitada"], state="readonly", width=12)
+        self.status.current(0)
+        self.status.bind("<<ComboboxSelected>>", self.mostrar_data_pagamento)
+        self.status.grid(row=0, column=7, padx=5)
+
+        self.lbl_pag = ttk.Label(quadro_mensal, text="Data Pagamento:")
+        self.data_pag = ttk.Entry(quadro_mensal, width=12)
+        self.data_pag.insert(0, datetime.now().strftime("%d/%m/%Y"))
+
+        # Tabela
+        self.tabela = ttk.Treeview(quadro_mensal, columns=("mes", "valor", "venc", "pag", "status"), show="headings", height=10)
+        self.tabela.heading("mes", text="Mês/Ano")
+        self.tabela.heading("valor", text="Valor")
+        self.tabela.heading("venc", text="Vencimento")
+        self.tabela.heading("pag", text="Pagamento")
+        self.tabela.heading("status", text="Status")
+
+        self.tabela.column("mes", width=90, anchor="center")
+        self.tabela.column("valor", width=110, anchor="center")
+        self.tabela.column("venc", width=110, anchor="center")
+        self.tabela.column("pag", width=110, anchor="center")
+        self.tabela.column("status", width=100, anchor="center")
+
+        self.tabela.tag_configure("atrasada", background=self.cor_atrasada)
+        self.tabela.tag_configure("quitada", background=self.cor_quitada)
+        self.tabela.tag_configure("receber", background=self.cor_receber)
+
+        self.tabela.bind("<<TreeviewSelect>>", self.selecionar_mensal)
+        barra = ttk.Scrollbar(quadro_mensal, orient="vertical", command=self.tabela.yview)
+        self.tabela.configure(yscrollcommand=barra.set)
+        barra.grid(row=1, column=9, sticky="ns")
+        self.tabela.grid(row=1, column=0, columnspan=9, sticky="nsew", pady=10)
+
+        quadro_mensal.grid_rowconfigure(1, weight=1)
+        quadro_mensal.grid_columnconfigure(0, weight=1)
+
+        rodape = ttk.Frame(quadro_mensal)
+        rodape.grid(row=2, column=0, columnspan=9, sticky="ew")
+        ttk.Button(rodape, text="Quitar / Atualizar", command=self.atualizar_mensalidade).pack(side=tk.LEFT, padx=5)
+        ttk.Button(rodape, text="Ver e Imprimir Recibo", command=self.imprimir_recibo).pack(side=tk.RIGHT, padx=5)
+
+    def mostrar_data_pagamento(self, evento=None):
+        if self.status.get() == "Quitada":
+            self.lbl_pag.grid(row=0, column=8, padx=5, pady=5, sticky="w")
+            self.data_pag.grid(row=0, column=9, padx=5)
         else:
-            st.info("ℹ️ Nenhum aluno cadastrado ainda.")
+            self.lbl_pag.grid_remove()
+            self.data_pag.grid_remove()
 
-# ------------------------------
-# TELA DE MENSALIDADES
-# ------------------------------
-elif menu == "Mensalidades":
-    st.subheader("Controle de Mensalidades")
-    df_alunos = carregar_alunos()
-    df_mensal = carregar_mensalidades()
-    hoje_dt = date.today()
+    def excluir_aluno(self):
+        if not self.id_aluno:
+            messagebox.showwarning("Aviso", "Selecione um aluno na lista primeiro!")
+            return
+        sel = self.lista_box.get(self.lista_box.curselection())
+        confirma = messagebox.askyesno("Confirmação", f"Excluir aluno:\n{sel}?\nEssa ação não pode ser desfeita!")
+        if not confirma:
+            return
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM alunos WHERE id_aluno=?", (self.id_aluno,))
+        conn.commit()
+        conn.close()
+        messagebox.showinfo("Sucesso", "Aluno excluído!")
+        self.limpar_campos()
+        self.carregar_alunos()
 
-    if df_alunos.empty:
-        st.warning("⚠️ Cadastre um aluno primeiro!")
-    else:
-        st.info("💡 Clique no nome do aluno para ver e gerenciar suas parcelas")
-        st.divider()
+    def carregar_alunos(self):
+        self.lista_box.delete(0, tk.END)
+        self.lista_alunos = []
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("SELECT id_aluno, nome FROM alunos ORDER BY nome")
+        self.lista_alunos = cur.fetchall()
+        for _, n in self.lista_alunos:
+            self.lista_box.insert(tk.END, n)
+        conn.close()
 
-        for _, aluno in df_alunos.iterrows():
-            id_aluno = aluno["id_aluno"]
-            multa_perc_aluno = float(aluno["multa_percentual"])
-            mensais = df_mensal[df_mensal["id_aluno"] == id_aluno].copy()
+    def selecionar_aluno(self, evt):
+        sel = self.lista_box.curselection()
+        if not sel:
+            return
+        self.id_aluno = self.lista_alunos[sel[0]][0]
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM alunos WHERE id_aluno=?", (self.id_aluno,))
+        d = cur.fetchone()
+        conn.close()
+        self.nome.delete(0, tk.END); self.nome.insert(0, d[1])
+        self.resp.delete(0, tk.END); self.resp.insert(0, d[2])
+        self.dt_mat.delete(0, tk.END); self.dt_mat.insert(0, d[3])
+        self.ano.delete(0, tk.END); self.ano.insert(0, str(d[4]))
+        self.valor.delete(0, tk.END); self.valor.insert(0, f"{d[5]:.2f}".replace('.', ','))
+        self.parcelas.delete(0, tk.END); self.parcelas.insert(0, str(d[6]))
+        self.mes_inic.current(d[7] - 1)
+        self.turno.set(d[8])
+        self.carregar_mensalidades()
 
-            qtde_atrasadas = len(mensais[(mensais["status"] == "A Receber") & (pd.to_datetime(mensais["vencimento"], format="%d/%m/%Y", errors="coerce").dt.date < hoje_dt)])
-            qtde_receber = len(mensais[(mensais["status"] == "A Receber") & (pd.to_datetime(mensais["vencimento"], format="%d/%m/%Y", errors="coerce").dt.date >= hoje_dt)])
-            qtde_pagas = len(mensais[mensais["status"] == "Quitada"])
+    def carregar_mensalidades(self):
+        for i in self.tabela.get_children():
+            self.tabela.delete(i)
+        if not self.id_aluno:
+            return
+        conn = conectar()
+        cur = conn.cursor()
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        cur.execute("SELECT id_mensalidade, mes_ano, valor, vencimento, data_pagamento, status FROM mensalidades WHERE id_aluno=? ORDER BY mes_ano", (self.id_aluno,))
+        for im, ma, v, ve, p, s in cur.fetchall():
+            sexib = "Atrasada" if s == "A Receber" and data_valida(ve) and datetime.strptime(ve, "%d/%m/%Y") < datetime.strptime(hoje, "%d/%m/%Y") else s
+            tag = "atrasada" if sexib == "Atrasada" else ("quitada" if s == "Quitada" else "receber")
+            self.tabela.insert("", "end", iid=str(im), values=(ma, formatar_valor(v), ve, p or "-", sexib), tags=(tag,))
+        conn.close()
 
-            titulo_exp = f"📌 {aluno['nome']} | Atrasadas: {qtde_atrasadas} | A Receber: {qtde_receber} | Pagas: {qtde_pagas}"
+    def selecionar_mensal(self, evt):
+        sel = self.tabela.selection()
+        if not sel:
+            return
+        self.id_mensal = int(sel[0])
+        d = self.tabela.item(sel[0], "values")
+        self.mesano.config(state="normal")
+        self.mesano.delete(0, tk.END); self.mesano.insert(0, d[0])
+        self.mesano.config(state="readonly")
+        self.valor_mes.delete(0, tk.END); self.valor_mes.insert(0, d[1].replace("R$ ", "").replace(",", "."))
+        self.venc.delete(0, tk.END); self.venc.insert(0, d[2])
+        status_exibido = d[4]
+        self.status.set("A Receber" if status_exibido == "Atrasada" else status_exibido)
+        if d[3] != "-":
+            self.data_pag.delete(0, tk.END); self.data_pag.insert(0, d[3])
+        else:
+            self.data_pag.delete(0, tk.END); self.data_pag.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        self.mostrar_data_pagamento()
 
-            with st.expander(titulo_exp):
-                if mensais.empty:
-                    st.info("Nenhuma parcela gerada para este aluno.")
-                    continue
+    # =====================================================
+    # 🔑 FUNÇÃO SALVAR ALUNO — CORRIGIDA E SIMPLIFICADA
+    # =====================================================
+    def salvar_aluno(self):
+        # Pegar e limpar todos os campos
+        n = self.nome.get().strip()
+        r = self.resp.get().strip()
+        dt = self.dt_mat.get().strip()
+        a = self.ano.get().strip()
+        v = self.valor.get().strip()
+        p = self.parcelas.get().strip()
+        mi = self.mes_inic.current() + 1
+        t = self.turno.get()
 
-                st.divider()
-                for idx, m in mensais.iterrows():
-                    status_exib = m["status"]
-                    dias_atraso = 0
-                    multa_calculada = 0.0
+        # ✅ Validações claras com mensagens específicas
+        if not n:
+            messagebox.showwarning("Aviso", "Digite o NOME do aluno!")
+            self.nome.focus()
+            return
+        if not r:
+            messagebox.showwarning("Aviso", "Digite o RESPONSÁVEL!")
+            self.resp.focus()
+            return
+        if not data_valida(dt):
+            messagebox.showwarning("Aviso", f"Data de matrícula inválida: {dt}\nUse o formato DD/MM/AAAA")
+            self.dt_mat.focus()
+            return
+        if not a.isdigit():
+            messagebox.showwarning("Aviso", f"Ano inválido: {a}\nDigite apenas números, ex: 2026")
+            self.ano.delete(0, tk.END); self.ano.insert(0, str(datetime.now().year))
+            self.ano.focus()
+            return
+        if not v:
+            messagebox.showwarning("Aviso", "Digite o VALOR MENSAL!")
+            self.valor.focus()
+            return
+        if not p.isdigit() or int(p) <= 0:
+            messagebox.showwarning("Aviso", "Quantidade de PARCELAS inválida!\nDigite um número maior que zero.")
+            self.parcelas.delete(0, tk.END); self.parcelas.insert(0, "12")
+            self.parcelas.focus()
+            return
 
-                    venc_dt = texto_para_data(str(m["vencimento"]))
-                    if venc_dt and status_exib == "A Receber" and venc_dt < hoje_dt:
-                        dias_atraso = (hoje_dt - venc_dt).days
-                        status_exib = "Atrasada"
-                        multa_calculada = calcular_multa(float(m["valor"]), multa_perc_aluno, dias_atraso)
-                        if float(m["multa_valor"]) != multa_calculada:
-                            df_mensal.at[idx, "multa_valor"] = multa_calculada
-                            df_mensal.to_csv(ARQ_MENSAL, index=False)
+        # ✅ Conversão segura
+        try:
+            ano_int = int(a)
+            valor_str = v.replace('R$', '').replace(' ', '').replace(',', '.')
+            valor_float = float(valor_str)
+            parcelas_int = int(p)
+            if valor_float <= 0:
+                messagebox.showwarning("Aviso", "Valor mensal deve ser maior que zero!")
+                self.valor.focus()
+                return
+        except Exception as e:
+            messagebox.showwarning("Aviso", f"Erro nos valores:\n{e}\nVerifique valor e parcelas.")
+            return
 
-                    cor = "🔴" if status_exib == "Atrasada" else ("🟢" if status_exib == "Quitada" else "🟡")
-                    dt_pag_exib = m["data_pagamento"] if str(m["data_pagamento"]).strip() else "--"
-                    multa_exib = formatar_valor(m["multa_valor"]) if float(m["multa_valor"]) > 0 else "R$ 0,00"
-                    total_exib = formatar_valor(float(m["valor"]) + float(m["multa_valor"]))
-                    
-                    with st.container(border=True):
-                        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([1.2, 1.3, 1.3, 1.3, 1.3, 1.5, 1.5, 1])
-                        col1.write(f"**{m['mes_ano']}**")
-                        col2.write(formatar_valor(m["valor"]))
-                        col3.write(f"Venc: {m['vencimento']}")
-                        col4.write(f"Pagto: {dt_pag_exib}")
-                        col5.write(f"Multa: {multa_exib}")
-                        col6.write(f"Total: {total_exib}")
-                        col7.write(f"{cor} {status_exib}")
-                        
-                        if col8.button("Editar", key=f"btn_editar_{idx}"):
-                            st.session_state["editando_idx"] = idx
+        # ✅ SALVAR no banco
+        try:
+            conn = conectar()
+            cur = conn.cursor()
 
-                        if st.session_state.get("editando_idx") == idx:
-                            with st.form(f"form_parcela_{idx}", clear_on_submit=False):
-                                novo_valor = st.text_input("Valor R$", value=str(m["valor"]).replace('.', ','))
-                                
-                                venc_atual = texto_para_data(str(m["vencimento"])) or hoje_dt
-                                dt_pg_atual = texto_para_data(str(m["data_pagamento"])) or None
-                                
-                                novo_venc_cal = st.date_input("📅 Vencimento", value=venc_atual, format="DD/MM/YYYY")
-                                novo_venc = data_para_texto(novo_venc_cal)
-                                
-                                nova_multa = st.text_input("Multa R$", value=str(m["multa_valor"]).replace('.', ','))
-                                novo_status = st.selectbox("Status", ["A Receber", "Quitada"], index=0 if m["status"] == "A Receber" else 1)
-                                
-                                dt_pg_cal = st.date_input("📅 Data Pagamento (se quitada)", value=dt_pg_atual, format="DD/MM/YYYY")
-                                dt_pg = data_para_texto(dt_pg_cal) if novo_status == "Quitada" else ""
-                                
-                                if st.form_submit_button("Salvar Alteração"):
-                                    erros = []
-                                    try:
-                                        float(novo_valor.replace('.', '').replace(',', '.'))
-                                    except:
-                                        erros.append("Valor inválido")
-                                    try:
-                                        float(nova_multa.replace('.', '').replace(',', '.'))
-                                    except:
-                                        erros.append("Valor da multa inválido")
+            if not self.id_aluno:
+                # NOVO ALUNO
+                cur.execute(
+                    "INSERT INTO alunos VALUES (NULL,?,?,?,?,?,?,?,?)",
+                    (n, r, dt, ano_int, valor_float, parcelas_int, mi, t)
+                )
+                self.id_aluno = cur.lastrowid
+                mensagem = "✅ Aluno cadastrado com sucesso!"
+            else:
+                # EDITAR ALUNO EXISTENTE
+                cur.execute(
+                    "UPDATE alunos SET nome=?, responsavel=?, data_matricula=?, ano_letivo=?, valor_mensal=?, qtd_parcelas=?, mes_inicial=?, turno=? WHERE id_aluno=?",
+                    (n, r, dt, ano_int, valor_float, parcelas_int, mi, t, self.id_aluno)
+                )
+                mensagem = "✅ Aluno atualizado com sucesso!"
 
-                                    if erros:
-                                        for e in erros: st.error(f"❌ {e}")
-                                    else:
-                                        try:
-                                            df_mensal.at[idx, "valor"] = float(novo_valor.replace('.', '').replace(',', '.'))
-                                            df_mensal.at[idx, "vencimento"] = novo_venc
-                                            df_mensal.at[idx, "multa_valor"] = float(nova_multa.replace('.', '').replace(',', '.'))
-                                            df_mensal.at[idx, "status"] = novo_status
-                                            df_mensal.at[idx, "data_pagamento"] = dt_pg
-                                            
-                                            df_mensal.to_csv(ARQ_MENSAL, index=False)
-                                            st.success("✅ Parcela atualizada!")
-                                            del st.session_state["editando_idx"]
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erro: {str(e)}")
+            conn.commit()
+            conn.close()
 
-# ------------------------------
-# RELATÓRIOS
-# ------------------------------
-elif menu == "Relatórios":
-    st.subheader("Relatórios Financeiros")
-    tipo = st.radio("Escolha o tipo de relatório:", ["Todos", "A Receber", "Atrasadas", "Quitadas", "Por Período"], horizontal=True)
-    
-    df_alunos = carregar_alunos()
-    df_mensal = carregar_mensalidades()
-    hoje_dt = date.today()
-    hoje_str = datetime.now().strftime("%d/%m/%Y")
-    
-    dados = None
-    titulo_rel = ""
+            # ✅ Gerar mensalidades APÓS confirmar salvamento
+            self.gerar_mensalidades(ano_int, valor_float, parcelas_int, mi)
 
-    if not df_mensal.empty and not df_alunos.empty:
-        df_completo = df_mensal.merge(df_alunos, on="id_aluno", how="left")
-        df_completo["vencimento_dt"] = pd.to_datetime(df_completo["vencimento"], format="%d/%m/%Y", errors="coerce").dt.date
-        df_completo["total_com_multa"] = df_completo["valor"] + df_completo["multa_valor"]
+            # ✅ Atualizar interface
+            self.carregar_alunos()
+            self.carregar_mensalidades()
+            messagebox.showinfo("Sucesso", mensagem)
 
-        if tipo == "Por Período":
-            st.write("---")
-            col_d1, col_d2 = st.columns(2)
-            
-            dt_inicio_cal = col_d1.date_input("📅 Data Início", value=date(2026,1,1), format="DD/MM/YYYY")
-            dt_fim_cal = col_d2.date_input("📅 Data Fim", value=hoje_dt, format="DD/MM/YYYY")
-            dt_inicio_str = data_para_texto(dt_inicio_cal)
-            dt_fim_str = data_para_texto(dt_fim_cal)
-            
-            status_periodo = st.radio("Filtrar por Status", ["Todos", "A Receber", "Atrasadas", "Quitadas"], horizontal=True)
-            
-            titulo_rel = f"Relatório: {status_periodo} | Período: {dt_inicio_str} até {dt_fim_str}"
+        except Exception as e:
+            messagebox.showerror("ERRO ao salvar", f"Não foi possível salvar:\n{str(e)}")
 
-            d_inicio = dt_inicio_cal
-            d_fim = dt_fim_cal
+    # =====================================================
+    # 🔑 GERAÇÃO DE MENSALIDADES — CORRIGIDA
+    # =====================================================
+    def gerar_mensalidades(self, ano, valor, qtd, mi):
+        conn = conectar()
+        cur = conn.cursor()
+        # Remove apenas mensalidades do ano letivo ao salvar novo
+        cur.execute("DELETE FROM mensalidades WHERE id_aluno=? AND mes_ano LIKE ?", (self.id_aluno, f"%/{ano}"))
 
-            dados = df_completo[(df_completo["vencimento_dt"] >= d_inicio) & (df_completo["vencimento_dt"] <= d_fim)]
+        mes_atual = mi - 1  # índice 0-based
+        for i in range(qtd):
+            # Calcula mês e ano corretamente, atravessando dezembro → janeiro
+            mes = (mes_atual + i) % 12
+            deslocamento_ano = (mes_atual + i) // 12
+            ano_correto = ano + deslocamento_ano
 
-            if status_periodo == "A Receber":
-                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento_dt"] >= hoje_dt)]
-            elif status_periodo == "Atrasadas":
-                dados = dados[(dados["status"] == "A Receber") & (dados["vencimento_dt"] < hoje_dt)]
-            elif status_periodo == "Quitadas":
-                dados = dados[dados["status"] == "Quitada"]
+            mes_ano_str = f"{LISTA_MESES[mes]}/{ano_correto}"
+            vencimento_str = f"10/{LISTA_MESES[mes]}/{ano_correto}"
 
-        elif tipo == "Todos":
-            titulo_rel = "Relatório Geral de Mensalidades"
-            dados = df_completo
-        elif tipo == "A Receber":
-            titulo_rel = "Relatório - Mensalidades A Receber"
-            dados = df_completo[(df_completo["status"] == "A Receber") & (df_completo["vencimento_dt"] >= hoje_dt)]
-        elif tipo == "Atrasadas":
-            titulo_rel = "Relatório - Mensalidades Atrasadas"
-            dados = df_completo[(df_completo["status"] == "A Receber") & (df_completo["vencimento_dt"] < hoje_dt)]
-        elif tipo == "Quitadas":
-            titulo_rel = "Relatório - Mensalidades Quitadas"
-            dados = df_completo[df_completo["status"] == "Quitada"]
+            try:
+                cur.execute(
+                    "INSERT INTO mensalidades VALUES (NULL,?,?,?,?,NULL,'A Receber')",
+                    (self.id_aluno, mes_ano_str, valor, vencimento_str)
+                )
+            except sqlite3.IntegrityError:
+                # Se já existir, ignora sem travar
+                pass
 
-    if dados is not None and not dados.empty:
-        exibe = dados[["nome", "mes_ano", "valor", "multa_valor", "total_com_multa", "vencimento", "data_pagamento", "status"]].copy()
-        exibe["data_pagamento"] = exibe["data_pagamento"].replace("", "--")
-        exibe["valor"] = exibe["valor"].apply(formatar_valor)
-        exibe["multa_valor"] = exibe["multa_valor"].apply(formatar_valor)
-        exibe["total_com_multa"] = exibe["total_com_multa"].apply(formatar_valor)
-        total_geral = dados["valor"].sum() + dados["multa_valor"].sum()
+        conn.commit()
+        conn.close()
 
-        st.subheader(titulo_rel)
-        st.dataframe(exibe, use_container_width=True)
-        st.subheader(f"Total Geral (com multas): {formatar_valor(total_geral)}")
+    def atualizar_mensalidade(self):
+        if not self.id_mensal:
+            messagebox.showwarning("Aviso", "Selecione uma mensalidade!")
+            return
+        try:
+            v = float(self.valor_mes.get().replace(',', '.'))
+            if v <= 0:
+                raise ValueError("Valor negativo")
+        except Exception as e:
+            messagebox.showwarning("Aviso", f"Valor inválido! {e}")
+            return
+        ve = self.venc.get().strip()
+        st = self.status.get()
+        pg = self.data_pag.get().strip() if st == "Quitada" else None
+        if st == "Quitada" and not data_valida(pg):
+            messagebox.showwarning("Aviso", "Data de pagamento inválida!")
+            return
+        if not data_valida(ve):
+            messagebox.showwarning("Aviso", "Data de vencimento inválida!")
+            return
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("UPDATE mensalidades SET valor=?, vencimento=?, data_pagamento=?, status=? WHERE id_mensalidade=?",
+                    (v, ve, pg, st, self.id_mensal))
+        conn.commit()
+        conn.close()
+        self.carregar_mensalidades()
+        messagebox.showinfo("Sucesso", "Mensalidade atualizada!")
 
-        st.divider()
-        col_imp, col_exp = st.columns(2)
-        with col_imp:
-            if st.button("🖨️ Gerar Visualização para Impressão"):
-                st.markdown(f"<h2 style='text-align:center;'>{titulo_rel}</h2><p style='text-align:center;'>Emitido em: {hoje_str}</p><hr>", unsafe_allow_html=True)
-                st.table(exibe)
-                st.markdown(f"<div style='text-align:right; font-weight:bold; font-size:18px;'>Total Geral: {formatar_valor(total_geral)}</div>", unsafe_allow_html=True)
-                st.info("💡 Use Ctrl+P no navegador para salvar em PDF ou imprimir.")
-        with col_exp:
-            excel = gerar_excel(exibe, titulo_rel.replace(" ", "_"))
-            st.download_button(
-                label="📥 Baixar Relatório em Excel",
-                data=excel,
-                file_name=f"{titulo_rel.replace(' ', '_')}_{hoje_str.replace('/', '-')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-    else:
-        st.info("ℹ️ Nenhum registro encontrado para os filtros selecionados.")
+    def limpar_campos(self):
+        self.id_aluno = None
+        self.id_mensal = None
+        self.nome.delete(0, tk.END)
+        self.resp.delete(0, tk.END)
+        self.dt_mat.delete(0, tk.END)
+        self.dt_mat.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        self.ano.delete(0, tk.END)
+        self.ano.insert(0, str(datetime.now().year))
+        self.valor.delete(0, tk.END)
+        self.parcelas.delete(0, tk.END)
+        self.parcelas.insert(0, "12")
+        self.mes_inic.current(0)
+        self.turno.current(0)
+        self.status.set("A Receber")
+        self.mostrar_data_pagamento()
+        for i in self.tabela.get_children():
+            self.tabela.delete(i)
+
+    def imprimir_aluno(self):
+        if not self.id_aluno:
+            messagebox.showwarning("Aviso", "Selecione um aluno!")
+            return
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM alunos WHERE id_aluno=?", (self.id_aluno,))
+        d = cur.fetchone()
+        conn.close()
+        txt = (
+            f"Nome: {d[1]}\n"
+            f"Responsável: {d[2]}\n"
+            f"Data Matrícula: {d[3]}\n"
+            f"Ano Letivo: {d[4]}\n"
+            f"Valor Mensal: {formatar_valor(d[5])}\n"
+            f"Total Parcelas: {d[6]}\n"
+            f"Mês Inicial: {NOMES_MESES[d[7]-1]}\n"
+            f"Turno: {d[8]}"
+        )
+        Relatorio(self.janela, "FICHA DO ALUNO", txt, f"Matrícula em {d[3]}")
+
+    def imprimir_recibo(self):
+        if not self.id_mensal:
+            messagebox.showwarning("Aviso", "Selecione uma mensalidade!")
+            return
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("SELECT a.nome, a.responsavel, m.mes_ano, m.valor, m.vencimento, m.data_pagamento, m.status "
+                    "FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno WHERE id_mensalidade=?", (self.id_mensal,))
+        d = cur.fetchone()
+        conn.close()
+        txt = (
+            f"Aluno: {d[0]}\n"
+            f"Responsável: {d[1]}\n"
+            f"Mês/Ano: {d[2]}\n"
+            f"Valor: {formatar_valor(d[3])}\n"
+            f"Vencimento: {d[4]}\n"
+            f"Status: {d[6]}"
+        )
+        if d[5]:
+            txt += f"\nData Pagamento: {d[10]}"
+        Relatorio(self.janela, "RECIBO DE MENSALIDADE", txt, d[2])
+
+    # --- RELATÓRIOS ---
+    def rel_todos(self):
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("SELECT nome, responsavel, ano_letivo, valor_mensal, turno FROM alunos ORDER BY nome")
+        d = cur.fetchall()
+        conn.close()
+        txt = ""
+        for n, r, a, v, t in d:
+            txt += f"{n:<25} | {r:<20} | {a:<4} | {formatar_valor(v):<12} | {t}\n"
+        Relatorio(self.janela, "RELATÓRIO GERAL DE ALUNOS", txt, f"Ano Letivo {datetime.now().year}")
+
+    def rel_a_receber(self):
+        conn = conectar()
+        cur = conn.cursor()
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                    "WHERE m.status='A Receber' AND m.vencimento>=? ORDER BY m.mes_ano", (hoje,))
+        d = cur.fetchall()
+        conn.close()
+        txt = ""
+        total = 0
+        for n, m, v, ve in d:
+            txt += f"{n:<25} | {m:<8} | {formatar_valor(v):<12} | {ve}\n"
+            total += v
+        txt += f"\nTOTAL A RECEBER: {formatar_valor(total)}"
+        Relatorio(self.janela, "MENSALIDADES A RECEBER", txt, f"Até {hoje}")
+
+    def rel_atrasadas(self):
+        conn = conectar()
+        cur = conn.cursor()
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                    "WHERE m.status='A Receber' AND m.vencimento<? ORDER BY m.mes_ano", (hoje,))
+        d = cur.fetchall()
+        conn.close()
+        txt = ""
+        total = 0
+        for n, m, v, ve in d:
+            txt += f"{n:<25} | {m:<8} | {formatar_valor(v):<12} | {ve}\n"
+            total += v
+        txt += f"\nTOTAL ATRASADO: {formatar_valor(total)}"
+        Relatorio(self.janela, "MENSALIDADES ATRASADAS", txt, f"Até {hoje}")
+
+    def rel_quitadas(self):
+        conn = conectar()
+        cur = conn.cursor()
+        cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.data_pagamento FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                    "WHERE m.status='Quitada' ORDER BY m.mes_ano")
+        d = cur.fetchall()
+        conn.close()
+        txt = ""
+        total = 0
+        for n, m, v, p in d:
+            txt += f"{n:<25} | {m:<8} | {formatar_valor(v):<12} | {p or '-'}\n"
+            total += v
+        txt += f"\nTOTAL QUITADO: {formatar_valor(total)}"
+        Relatorio(self.janela, "MENSALIDADES QUITADAS", txt, f"Período de {datetime.now().year}")
+
+    def rel_periodo(self):
+        janela = tk.Toplevel(self.janela)
+        janela.title("Relatório por Período e Status")
+        janela.geometry("350x280")
+        janela.transient(self.janela)
+        janela.grab_set()
+
+        ttk.Label(janela, text="Data Inicial (dd/mm/aaaa):").pack(pady=5)
+        dt_inicio = ttk.Entry(janela)
+        dt_inicio.insert(0, f"01/01/{datetime.now().year}")
+        dt_inicio.pack(pady=5)
+
+        ttk.Label(janela, text="Data Final (dd/mm/aaaa):").pack(pady=5)
+        dt_fim = ttk.Entry(janela)
+        dt_fim.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        dt_fim.pack(pady=5)
+
+        ttk.Label(janela, text="Filtrar por Status:").pack(pady=(15, 5))
+        filtro_status = ttk.Combobox(janela, values=["Todos", "A Receber", "Atrasadas", "Quitadas"], state="readonly", width=25)
+        filtro_status.current(0)
+        filtro_status.pack(pady=5)
+
+        def gerar():
+            di = dt_inicio.get().strip()
+            df = dt_fim.get().strip()
+            sts = filtro_status.get()
+            if not data_valida(di) or not data_valida(df):
+                messagebox.showwarning("Aviso", "Datas inválidas! Use dd/mm/aaaa")
+                return
+
+            conn = conectar()
+            cur = conn.cursor()
+            hoje = datetime.now().strftime("%d/%m/%Y")
+
+            if sts == "Todos":
+                cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                            "WHERE m.vencimento BETWEEN ? AND ? ORDER BY m.mes_ano, a.nome", (di, df))
+                titulo = f"RELATÓRIO GERAL DE {di} A {df}"
+            elif sts == "A Receber":
+                cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                            "WHERE m.status='A Receber' AND m.vencimento BETWEEN ? AND ? AND m.vencimento>=? ORDER BY m.mes_ano, a.nome", (di, df, hoje))
+                titulo = f"MENSALIDADES A RECEBER - {di} A {df}"
+            elif sts == "Atrasadas":
+                cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                            "WHERE m.status='A Receber' AND m.vencimento BETWEEN ? AND ? AND m.vencimento<? ORDER BY m.mes_ano, a.nome", (di, df, hoje))
+                titulo = f"MENSALIDADES ATRASADAS - {di} A {df}"
+            elif sts == "Quitadas":
+                cur.execute("SELECT a.nome, m.mes_ano, m.valor, m.vencimento, m.status FROM mensalidades m JOIN alunos a ON m.id_aluno=a.id_aluno "
+                            "WHERE m.status='Quitada' AND m.vencimento BETWEEN ? AND ? ORDER BY m.mes_ano, a.nome", (di, df))
+                titulo = f"MENSALIDADES QUITADAS - {di} A {df}"
+            else:
+                return
+
+            d = cur.fetchall()
+            conn.close()
+            if not d:
+                messagebox.showinfo("Aviso", "Nenhum registro encontrado para esse filtro!")
+                janela.destroy()
+                return
+            txt = ""
+            total = 0
+            for n, m, v, ve, s in d:
+                txt += f"{n:<25} | {m:<8} | {formatar_valor(v):<12} | {ve:<10} | {s}\n"
+                total += v
+            txt += f"\nTOTAL NO PERÍODO: {formatar_valor(total)}"
+            Relatorio(self.janela, titulo, txt, f"{di} até {df} | {sts}")
+            janela.destroy()
+
+        ttk.Button(janela, text="Gerar Relatório", command=gerar).pack(pady=10)
+
+
+if __name__ == "__main__":
+    janela = tk.Tk()
+    app = Sistema(janela)
+    janela.mainloop()
