@@ -2,8 +2,6 @@ import streamlit as st
 import sqlite3
 from datetime import datetime
 import pandas as pd
-import os
-import shutil
 
 # ------------------------------
 # CONFIGURAÇÃO
@@ -11,42 +9,17 @@ import shutil
 st.set_page_config(page_title="Controle de Mensalidades", layout="wide")
 st.title("📚 Controle de Mensalidades")
 
-ARQ_DB = 'controle_mensalidades_novo.db'
+ARQ_DB = 'mensalidades.db'
 
 # ------------------------------
-# BANCO DE DADOS + CORREÇÃO DE DADOS ANTIGOS
+# CONEXÃO COM BANCO
 # ------------------------------
 def conectar():
-    return sqlite3.connect(ARQ_DB, timeout=5)
+    return sqlite3.connect(ARQ_DB, timeout=10)
 
-def formatar_data_fixa(data_str):
-    """Transforma QUALQUER data em dd/mm/aaaa"""
-    if not data_str or str(data_str).strip() == "" or str(data_str) == "None":
-        return ""
-    s = str(data_str).strip().replace("/", "").replace("-", "").replace(".", "")
-    try:
-        if len(s) == 8 and s.isdigit():
-            return f"{s[0:2]}/{s[2:4]}/{s[4:8]}"
-        return datetime.strptime(s, "%d%m%Y").strftime("%d/%m/%Y")
-    except:
-        try:
-            return datetime.strptime(s, "%d/%m/%Y").strftime("%d/%m/%Y")
-        except:
-            return data_str
-
-def corrigir_dados_banco():
-    """Correção única: formata todas as datas que já estão salvas"""
-    conn = conectar()
-    cur = conn.cursor()
-    cur.execute("SELECT id_mensalidade, vencimento, data_pagamento FROM mensalidades")
-    todos = cur.fetchall()
-    for id_m, ven, pag in todos:
-        ven_novo = formatar_data_fixa(ven)
-        pag_novo = formatar_data_fixa(pag)
-        cur.execute("UPDATE mensalidades SET vencimento = ?, data_pagamento = ? WHERE id_mensalidade = ?", (ven_novo, pag_novo, id_m))
-    conn.commit()
-    conn.close()
-
+# ------------------------------
+# CRIAR TABELAS
+# ------------------------------
 def criar_banco():
     conn = conectar()
     cur = conn.cursor()
@@ -78,20 +51,6 @@ def criar_banco():
     conn.close()
 
 criar_banco()
-corrigir_dados_banco()
-
-# ------------------------------
-# BACKUP
-# ------------------------------
-def fazer_backup():
-    try:
-        pasta = "BACKUPS"
-        if not os.path.exists(pasta): os.makedirs(pasta)
-        dh = datetime.now().strftime("%Y%m%d_%H%M")
-        shutil.copy2(ARQ_DB, os.path.join(pasta, f"backup_{dh}.db"))
-        arquivos = sorted([os.path.join(pasta, f) for f in os.listdir(pasta) if f.startswith("backup_")], key=os.path.getmtime)
-        if len(arquivos) > 10: os.remove(arquivos[0])
-    except: pass
 
 # ------------------------------
 # FUNÇÕES AUXILIARES
@@ -102,28 +61,73 @@ def formatar_valor(valor):
 def formatar_valor_df(valor):
     return f"{valor:.2f}".replace('.', ',')
 
-def data_valida(data):
-    try: datetime.strptime(data, "%d/%m/%Y"); return True
-    except: return False
+def data_br(data):
+    return data.strftime("%d/%m/%Y") if data else ""
 
 NOMES_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 LISTA_MESES = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
 
-fazer_backup()
-
-# ------------------------------
-# FUNÇÃO DE CORES
-# ------------------------------
 def cor_status(valor):
-    if valor == "Atrasada":
-        return 'background-color: #ffd6d6'
-    elif valor == "Quitada":
-        return 'background-color: #d6ffd6'
-    elif valor == "A Receber":
-        return 'background-color: #ffffd6'
+    if valor == "Atrasada": return 'background-color: #ffd6d6'
+    elif valor == "Quitada": return 'background-color: #d6ffd6'
+    elif valor == "A Receber": return 'background-color: #ffffd6'
     return ''
 
+def gerar_html_impressao(titulo, df, total=""):
+    """Gera página formatada que abre direto na impressora"""
+    linhas = ""
+    for _, row in df.iterrows():
+        linhas += "<tr>"
+        for v in row:
+            valor = str(v)
+            if valor == "nan":
+                valor = ""
+            linhas += f"<td>{valor}</td>"
+        linhas += "</tr>"
+
+    cabecalho = "".join(f"<th>{c}</th>" for c in df.columns)
+    data_emissao = datetime.now().strftime("%d/%m/%Y às %H:%M")
+    linha_total = f"<p class='total'>{total}</p>" if total else ""
+
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>{titulo}</title>
+        <style>
+            body {{ font-family: Arial; padding: 20px; }}
+            h1 {{ text-align: center; color: #2c3e50; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #000; padding: 8px; text-align: left; font-size: 13px; }}
+            th {{ background: #2c3e50; color: white; }}
+            tr:nth-child(even) {{ background: #f2f2f2; }}
+            .total {{ margin-top: 20px; font-size: 18px; font-weight: bold; text-align: right; }}
+            .data {{ text-align: right; color: #666; font-size: 12px; margin-bottom: 10px; }}
+            .botao {{ margin: 20px 0; text-align: center; }}
+            button {{ padding: 10px 25px; font-size: 16px; cursor: pointer; background: #2c3e50; color: white; border: none; border-radius: 5px; }}
+            @media print {{
+                .botao {{ display: none; }}
+                th {{ background: #ccc !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>{titulo}</h1>
+        <p class="data">Emitido em: {data_emissao}</p>
+        <table>
+            <tr>{cabecalho}</tr>
+            {linhas}
+        </table>
+        {linha_total}
+        <div class="botao">
+            <button onclick="window.print()">🖨️ Clique Aqui para Imprimir</button>
+        </div>
+        <script>window.onload=function(){{setTimeout(function(){{window.print()}},500);}};</script>
+    </body>
+    </html>
+    """
+    return html
 # ------------------------------
 # MENU
 # ------------------------------
@@ -142,7 +146,7 @@ if menu == "Cadastrar Aluno":
         with col1:
             nome = st.text_input("Nome do Aluno")
             responsavel = st.text_input("Responsável")
-            data_matricula = st.text_input("Data Matrícula (dd/mm/aaaa)", value=datetime.now().strftime("%d/%m/%Y"))
+            data_matricula = st.date_input("📅 Data Matrícula", value=datetime.now(), format="DD/MM/YYYY")
             ano_letivo = st.number_input("Ano Letivo", min_value=2020, max_value=2030, value=datetime.now().year)
         with col2:
             valor_mensal = st.number_input("Valor Mensal (R$)", min_value=0.0, format="%.2f")
@@ -154,15 +158,11 @@ if menu == "Cadastrar Aluno":
         if st.form_submit_button("💾 Salvar Aluno"):
             if not all([nome, responsavel, data_matricula, ano_letivo, valor_mensal, qtd_parcelas, mes_inicial, turno]):
                 st.error("Preencha todos os campos!")
-            elif not data_valida(data_matricula):
-                st.error("Data inválida! Use dd/mm/aaaa")
             else:
                 conn = conectar()
                 cur = conn.cursor()
-                cur.execute('''
-                INSERT INTO alunos (nome, responsavel, data_matricula, ano_letivo, valor_mensal, qtd_parcelas, mes_inicial, turno)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (nome, responsavel, data_matricula, ano_letivo, valor_mensal, qtd_parcelas, mes_inicial, turno))
+                cur.execute('INSERT INTO alunos VALUES (NULL,?,?,?,?,?,?,?,?)',
+                            (nome, responsavel, data_br(data_matricula), ano_letivo, valor_mensal, qtd_parcelas, mes_inicial, turno))
                 id_novo = cur.lastrowid
 
                 ano_base = ano_letivo
@@ -173,10 +173,8 @@ if menu == "Cadastrar Aluno":
                         data_venc = datetime(ano_base, mes_atual, dia_vencimento).strftime("%d/%m/%Y")
                     except:
                         data_venc = datetime(ano_base, mes_atual, 1).strftime("%d/%m/%Y")
-                    cur.execute('''
-                    INSERT INTO mensalidades (id_aluno, mes_ano, valor, vencimento)
-                    VALUES (?, ?, ?, ?)
-                    ''', (id_novo, mes_ano, valor_mensal, data_venc))
+                    cur.execute('INSERT INTO mensalidades VALUES (NULL,?,?,?,?,?, "A Receber")',
+                                (id_novo, mes_ano, valor_mensal, data_venc, None))
                     mes_atual += 1
                     if mes_atual > 12:
                         mes_atual = 1
@@ -184,208 +182,168 @@ if menu == "Cadastrar Aluno":
 
                 conn.commit()
                 conn.close()
-                fazer_backup()
-                st.success(f"Aluno cadastrado + {qtd_parcelas} mensalidades geradas!")
+                st.success(f"✅ Aluno cadastrado + {qtd_parcelas} mensalidades geradas!")
                 st.rerun()
 
 # ------------------------------
 # 2. CONSULTAR ALUNO
 # ------------------------------
 elif menu == "Consultar Aluno":
-    st.subheader("🔍 Consultar Dados do Aluno")
+    st.subheader("🔍 Consultar Aluno")
     conn = conectar()
     alunos = pd.read_sql("SELECT id_aluno, nome FROM alunos ORDER BY nome", conn)
     conn.close()
-
     if not alunos.empty:
         id_aluno = st.selectbox("Selecione o Aluno", options=alunos['id_aluno'], format_func=lambda x: alunos[alunos['id_aluno']==x]['nome'].values[0])
-        if id_aluno:
-            conn = conectar()
-            dados_aluno = pd.read_sql("SELECT * FROM alunos WHERE id_aluno = ?", conn, params=(id_aluno,))
-            mensalidades = pd.read_sql("""
-                SELECT mes_ano, valor, vencimento AS "Data de Vencimento", 
-                       data_pagamento AS "Data de Pagamento", status 
-                FROM mensalidades WHERE id_aluno = ? ORDER BY mes_ano
-            """, conn, params=(id_aluno,))
-            conn.close()
-
-            if not mensalidades.empty:
-                mensalidades["valor"] = mensalidades["valor"].apply(formatar_valor_df)
-                mensalidades["Data de Vencimento"] = mensalidades["Data de Vencimento"].apply(formatar_data_fixa)
-                mensalidades["Data de Pagamento"] = mensalidades["Data de Pagamento"].apply(formatar_data_fixa)
-
-            st.write("📋 Dados Cadastrais:")
-            st.dataframe(dados_aluno, use_container_width=True)
-
-            st.write("💳 Histórico de Mensalidades:")
-            if not mensalidades.empty:
-                styled = mensalidades.style.map(cor_status, subset=["status"])
-                st.dataframe(styled, use_container_width=True)
-            else:
-                st.info("Nenhuma mensalidade gerada.")
+        conn = conectar()
+        dados = pd.read_sql("SELECT * FROM alunos WHERE id_aluno=?", conn, params=(id_aluno,))
+        mensal = pd.read_sql("SELECT mes_ano, valor, vencimento, data_pagamento, status FROM mensalidades WHERE id_aluno=? ORDER BY mes_ano", conn, params=(id_aluno,))
+        conn.close()
+        st.write("📋 Dados Cadastrais:")
+        st.dataframe(dados, use_container_width=True)
+        st.write("💳 Mensalidades:")
+        if not mensal.empty:
+            mensal["valor"] = mensal["valor"].apply(formatar_valor_df)
+            st.dataframe(mensal.style.map(cor_status, subset=["status"]), use_container_width=True)
+        else:
+            st.info("Nenhuma mensalidade.")
     else:
         st.info("Nenhum aluno cadastrado.")
 
 # ------------------------------
-# 3. LANÇAR PAGAMENTO (CORREÇÃO FINAL DA DATA!)
+# 3. LANÇAR PAGAMENTO
 # ------------------------------
 elif menu == "Lançar Pagamento":
-    st.subheader("💳 Lançar Pagamento e Atualizar Status")
+    st.subheader("💳 Lançar Pagamento")
     conn = conectar()
     alunos = pd.read_sql("SELECT id_aluno, nome FROM alunos ORDER BY nome", conn)
     conn.close()
-
     if not alunos.empty:
         id_aluno = st.selectbox("Aluno", options=alunos['id_aluno'], format_func=lambda x: alunos[alunos['id_aluno']==x]['nome'].values[0])
-        if id_aluno:
-            conn = conectar()
-            mensal = pd.read_sql("""
-                SELECT id_mensalidade, mes_ano, valor, vencimento AS "Data de Vencimento", 
-                       data_pagamento AS "Data de Pagamento", status 
-                FROM mensalidades WHERE id_aluno = ? ORDER BY mes_ano
-            """, conn, params=(id_aluno,))
-            conn.close()
-
-            if not mensal.empty:
-                mensal["valor"] = mensal["valor"].apply(formatar_valor_df)
-                mensal["Data de Vencimento"] = mensal["Data de Vencimento"].apply(formatar_data_fixa)
-                mensal["Data de Pagamento"] = mensal["Data de Pagamento"].apply(formatar_data_fixa)
-                st.dataframe(
-                    mensal.style.map(cor_status, subset=["status"]),
-                    use_container_width=True
-                )
-                with st.form("form_pagamento", clear_on_submit=False):
-                    id_mensal = st.selectbox(
-                        "Mensalidade", 
-                        options=mensal['id_mensalidade'], 
-                        format_func=lambda x: f"{mensal[mensal['id_mensalidade']==x]['mes_ano'].values[0]} - R$ {mensal[mensal['id_mensalidade']==x]['valor'].values[0]}"
-                    )
-                    novo_status = st.selectbox("Status", ["A Receber", "Quitada", "Atrasada"])
-                    
-                    # ✅ MOSTRA A DATA JÁ SALVA; SE NÃO TIVER, DEIXA VAZIO PARA VOCÊ PREENCHER
-                    data_atual = mensal[mensal['id_mensalidade']==id_mensal]['Data de Pagamento'].values[0]
-                    if data_atual in [None, "", "None"]:
-                        data_pag = st.text_input("Data Pagamento (dd/mm/aaaa)", value="")
-                    else:
-                        data_pag = st.text_input("Data Pagamento (dd/mm/aaaa)", value=data_atual)
-
-                    if st.form_submit_button("✅ Salvar Alteração"):
-                        # ✅ REGRA DE OURO: USA O QUE VOCÊ DIGITOU
-                        if data_pag.strip() != "":
-                            data_final = data_pag.strip()
-                        # Se deixou vazio e marcar como Quitada, usa hoje como ajuda
-                        elif novo_status == "Quitada":
-                            data_final = datetime.now().strftime("%d/%m/%Y")
-                        # Se deixou vazio e não é Quitada, não preenche nada
-                        else:
-                            data_final = None
-
-                        conn = conectar()
-                        cur = conn.cursor()
-                        cur.execute('''
-                        UPDATE mensalidades SET status = ?, data_pagamento = ? WHERE id_mensalidade = ?
-                        ''', (novo_status, data_final, id_mensal))
-                        conn.commit()
-                        conn.close()
-                        fazer_backup()
-                        st.success("Pagamento lançado com sucesso! A data informada foi mantida.")
-                        st.rerun()
+        conn = conectar()
+        mensal = pd.read_sql("SELECT * FROM mensalidades WHERE id_aluno=? ORDER BY mes_ano", conn, params=(id_aluno,))
+        conn.close()
+        if not mensal.empty:
+            mensal["valor"] = mensal["valor"].apply(formatar_valor_df)
+            st.dataframe(mensal.style.map(cor_status, subset=["status"]), use_container_width=True)
+            with st.form("pagamento"):
+                id_m = st.selectbox("Mensalidade", options=mensal['id_mensalidade'],
+                    format_func=lambda x: f"{mensal[mensal['id_mensalidade']==x]['mes_ano'].values[0]}")
+                status = st.selectbox("Status", ["A Receber", "Quitada", "Atrasada"])
+                data_pag = st.date_input("📅 Data Pagamento", value=None, format="DD/MM/YYYY")
+                
+                if st.form_submit_button("✅ Salvar"):
+                    dt = data_br(data_pag) if data_pag else (datetime.now().strftime("%d/%m/%Y") if status=="Quitada" else None)
+                    conn = conectar()
+                    conn.cursor().execute("UPDATE mensalidades SET status=?, data_pagamento=? WHERE id_mensalidade=?", (status, dt, id_m))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Salvo com sucesso!")
+                    st.rerun()
     else:
         st.info("Nenhum aluno cadastrado.")
-# ------------------------------
-# 4. LISTA DE ALUNOS
-# ------------------------------
-elif menu == "Lista de Alunos":
-    st.subheader("📋 Todos os Alunos Cadastrados")
-    conn = conectar()
-    df = pd.read_sql("SELECT * FROM alunos ORDER BY nome", conn)
-    conn.close()
-    if not df.empty:
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("Sem alunos cadastrados.")
 
 # ------------------------------
-# 5. RELATÓRIOS
+# 4. LISTA DE ALUNOS + IMPRIMIR
+# ------------------------------
+elif menu == "Lista de Alunos":
+    st.subheader("📋 Lista de Alunos — Ordem Alfabética")
+    conn = conectar()
+    df = pd.read_sql("SELECT nome AS [Aluno], responsavel AS [Responsável], data_matricula AS [Matrícula], ano_letivo AS [Ano], valor_mensal AS [Valor Mensal], turno AS Turno FROM alunos ORDER BY nome ASC", conn)
+    conn.close()
+    if not df.empty:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.subheader(f"👥 Total de Alunos: {len(df)}")
+        
+        # 🖨️ BOTÃO DE IMPRIMIR
+        if st.button("🖨️ Imprimir Lista"):
+            html = gerar_html_impressao("Lista de Alunos", df)
+            st.download_button("📄 Baixar para Impressão", html, "lista_alunos.html", "text/html")
+    else:
+        st.info("Nenhum aluno cadastrado.")
+
+# ------------------------------
+# 5. RELATÓRIOS COMPLETOS + IMPRIMIR
 # ------------------------------
 elif menu == "Relatórios":
     st.subheader("📊 Relatórios")
-    tipo = st.radio("Escolha o relatório", ["Todos os Lançamentos", "A Receber", "Atrasadas", "Quitadas", "Por Aluno"])
+    
+    tipo = st.radio("Escolha o Relatório", [
+        "Todos os Lançamentos por Vencimento",
+        "A Receber",
+        "Atrasadas",
+        "Quitadas"
+    ])
     
     st.subheader("📅 Filtrar por Período de Vencimento")
     col1, col2 = st.columns(2)
     with col1:
-        data_inicio = st.text_input("Data Inicial (dd/mm/aaaa)", value="01/01/2026")
+        data_ini = st.date_input("Data Inicial", value=datetime(datetime.now().year, 1, 1), format="DD/MM/YYYY")
     with col2:
-        data_fim = st.text_input("Data Final (dd/mm/aaaa)", value=datetime.now().strftime("%d/%m/%Y"))
+        data_fim = st.date_input("Data Final", value=datetime.now(), format="DD/MM/YYYY")
+    
+    dt_ini_sql = data_br(data_ini)[6:10] + "-" + data_br(data_ini)[3:5] + "-" + data_br(data_ini)[0:2]
+    dt_fim_sql = data_br(data_fim)[6:10] + "-" + data_br(data_fim)[3:5] + "-" + data_br(data_fim)[0:2]
 
-    if not data_valida(data_inicio) or not data_valida(data_fim):
-        st.error("Digite as datas no formato dd/mm/aaaa!")
+    sql_base = """
+        SELECT a.nome AS [Aluno], a.responsavel AS [Responsável],
+               m.mes_ano AS [Mês/Ano], m.vencimento AS [Vencimento],
+               m.valor AS Valor, m.data_pagamento AS [Pagamento], m.status AS Status
+        FROM alunos a
+        JOIN mensalidades m ON a.id_aluno = m.id_aluno
+        WHERE LENGTH(m.vencimento) = 10
+          AND DATE(SUBSTR(m.vencimento,7,4) || '-' || SUBSTR(m.vencimento,4,2) || '-' || SUBSTR(m.vencimento,1,2))
+              BETWEEN DATE(?) AND DATE(?)
+    """
+    params = [dt_ini_sql, dt_fim_sql]
+
+    if tipo == "A Receber":
+        sql_base += " AND m.status = 'A Receber' ORDER BY m.vencimento ASC"
+    elif tipo == "Atrasadas":
+        sql_base += " AND m.status = 'Atrasada' ORDER BY m.vencimento ASC"
+    elif tipo == "Quitadas":
+        sql_base += " AND m.status = 'Quitada' ORDER BY m.vencimento ASC"
     else:
-        conn = conectar()
-        base_sql = '''
-            SELECT a.nome, a.responsavel, m.mes_ano, m.valor, 
-                   m.vencimento AS "Data de Vencimento", 
-                   m.data_pagamento AS "Data de Pagamento", m.status
-            FROM alunos a JOIN mensalidades m ON a.id_aluno = m.id_aluno
-            WHERE DATE(SUBSTR(m.vencimento,7,4) || '-' || SUBSTR(m.vencimento,4,2) || '-' || SUBSTR(m.vencimento,1,2)) 
-                  BETWEEN DATE(?) AND DATE(?)
-        '''
-        params = [datetime.strptime(data_inicio, "%d/%m/%Y").strftime("%Y-%m-%d"),
-                  datetime.strptime(data_fim, "%d/%m/%Y").strftime("%Y-%m-%d")]
+        sql_base += " ORDER BY m.vencimento ASC"
 
-        if tipo == "Todos os Lançamentos":
-            rel = pd.read_sql(base_sql + " ORDER BY a.nome, m.vencimento", conn, params=params)
-        elif tipo == "A Receber":
-            rel = pd.read_sql(base_sql + " AND m.status = 'A Receber' ORDER BY m.vencimento", conn, params=params)
-        elif tipo == "Atrasadas":
-            rel = pd.read_sql(base_sql + " AND m.status = 'Atrasada' ORDER BY m.vencimento", conn, params=params)
-        elif tipo == "Quitadas":
-            rel = pd.read_sql(base_sql + " AND m.status = 'Quitada' ORDER BY m.data_pagamento", conn, params=params)
-        else:
-            lista_alunos = pd.read_sql("SELECT id_aluno, nome FROM alunos ORDER BY nome", conn)
-            id_escolhido = st.selectbox("Selecione o Aluno", options=lista_alunos['id_aluno'], format_func=lambda x: lista_alunos[lista_alunos['id_aluno']==x]['nome'].values[0])
-            rel = pd.read_sql(base_sql + " AND a.id_aluno = ? ORDER BY m.vencimento", conn, params=params + [id_escolhido])
-        conn.close()
+    conn = conectar()
+    rel = pd.read_sql(sql_base, conn, params=params)
+    conn.close()
 
-        if not rel.empty:
-            total_geral = rel["valor"].sum()
-            rel["valor"] = rel["valor"].apply(formatar_valor_df)
-            rel["Data de Vencimento"] = rel["Data de Vencimento"].apply(formatar_data_fixa)
-            rel["Data de Pagamento"] = rel["Data de Pagamento"].apply(formatar_data_fixa)
+    if not rel.empty:
+        rel["Valor"] = rel["Valor"].apply(formatar_valor_df)
+        total = rel["Valor"].str.replace(',', '.').astype(float).sum()
+        st.dataframe(rel.style.map(cor_status, subset=["Status"]), use_container_width=True, hide_index=True)
+        st.subheader(f"💰 Valor Total do Período: {formatar_valor(total)}")
 
-            st.dataframe(
-                rel.style.map(cor_status, subset=["status"]),
-                use_container_width=True
-            )
-            st.subheader(f"💰 Valor Total do Período: {formatar_valor(total_geral)}")
-
+        col_imp, col_down = st.columns(2)
+        with col_imp:
+            if st.button("🖨️ Imprimir Relatório"):
+                html = gerar_html_impressao(f"Relatório: {tipo}", rel, f"Valor Total: {formatar_valor(total)}")
+                st.download_button("📄 Abrir para Impressão", html, f"relatorio_{tipo.replace(' ','_')}.html", "text/html")
+        with col_down:
             csv = rel.to_csv(index=False, sep=';', encoding='utf-8')
-            st.download_button("📥 Baixar Relatório em CSV", csv, f"relatorio_{tipo}_{data_inicio.replace('/','-')}_a_{data_fim.replace('/','-')}.csv", "text/csv")
-        else:
-            st.info("Nenhum registro encontrado nesse período.")
+            st.download_button("📥 Baixar em CSV", csv, f"relatorio_{tipo.replace(' ','_')}.csv", "text/csv")
+    else:
+        st.info("Nenhum registro encontrado no período selecionado.")
 
 # ------------------------------
 # 6. EXCLUIR ALUNO
 # ------------------------------
 elif menu == "Excluir Aluno":
-    st.subheader("🗑️ Excluir Aluno e Todos os Dados")
-    st.warning("⚠️ ATENÇÃO: Essa ação apaga o aluno e todas as mensalidades para sempre! Não tem como desfazer.")
-    
+    st.subheader("🗑️ Excluir Aluno")
+    st.warning("⚠️ Apaga o aluno e todas as mensalidades!")
     conn = conectar()
     alunos = pd.read_sql("SELECT id_aluno, nome FROM alunos ORDER BY nome", conn)
     conn.close()
-
     if not alunos.empty:
-        id_aluno = st.selectbox("Selecione o Aluno para excluir", options=alunos['id_aluno'], format_func=lambda x: alunos[alunos['id_aluno']==x]['nome'].values[0])
-        confirmar = st.checkbox("Eu confiro que quero apagar esse aluno e todos os seus registros")
-        
-        if confirmar and st.button("🗑️ Confirmar Exclusão"):
+        id_aluno = st.selectbox("Aluno", options=alunos['id_aluno'], format_func=lambda x: alunos[alunos['id_aluno']==x]['nome'].values[0])
+        if st.checkbox("Confirmo a exclusão") and st.button("🗑️ Excluir"):
             conn = conectar()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM alunos WHERE id_aluno = ?", (id_aluno,))
+            conn.cursor().execute("DELETE FROM alunos WHERE id_aluno=?", (id_aluno,))
             conn.commit()
             conn.close()
-            fazer_backup()
-            st.success("Aluno excluído com sucesso!")
+            st.success("✅ Aluno excluído!")
             st.rerun()
+    else:
+        st.info("Nenhum aluno cadastrado.")
